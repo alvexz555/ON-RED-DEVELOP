@@ -902,35 +902,53 @@
         }
     }
 
-    function drawHUD(ctx, canvas) {
-        if (phase !== "FIGHT") return;
-        if (!ctx || !canvas) return;
+    // HUD de combate: faixa compacta acima do chefe. Nenhuma constante aqui
+    // altera movimento, tamanho, dano ou balanceamento do Boss.
+    const HUD_WIDE_MIN_WIDTH = 520;  // telas estreitas usam barra compacta
+    const HUD_BAR_PREFERRED_Y = 58;
+    const HUD_BAR_HEIGHT = 8;
+    const HUD_BLOCK_TOP = 13;    // titulo acima da barra
+    const HUD_BLOCK_BOTTOM = 20; // leitura de HP abaixo da barra
+    const HUD_GAP_ABOVE_BOSS = 8;
+    const HUD_MIN_BAR_Y = 44;    // nao invade a pontuacao central
 
-        // Faixa própria abaixo do HUD do jogador: evita sobrepor HP e vidas.
-        const width = Math.min(460, canvas.width * 0.78);
-        const height = 12;
+    function getBossTop() {
+        return Number.isFinite(boss.y) && Number.isFinite(boss.size)
+            ? boss.y - boss.size / 2
+            : Infinity;
+    }
+
+    function getHudLayout(canvas) {
+        const bossTop = getBossTop();
+
+        if (canvas.width >= HUD_WIDE_MIN_WIDTH) {
+            // Desktop/tablet: titulo, barra e leitura de HP, sempre acima do chefe.
+            const width = Math.min(360, Math.max(180, canvas.width * 0.62));
+            const safeBarY = bossTop - HUD_BLOCK_BOTTOM - HUD_GAP_ABOVE_BOSS;
+            let y = Math.min(HUD_BAR_PREFERRED_Y, safeBarY);
+            if (y < HUD_MIN_BAR_Y) {
+                y = Math.max(HUD_MIN_BAR_Y, canvas.height - 43);
+            }
+            return { mode: "full", width, height: HUD_BAR_HEIGHT, x: (canvas.width - width) / 2, y };
+        }
+
+        // Celular: uma unica barra fina, com rotulos embutidos, na faixa livre
+        // entre a pontuacao e o HUD de vidas/HP do jogador.
+        const width = Math.max(120, canvas.width - 24);
         const x = (canvas.width - width) / 2;
-        const y = 132;
+        const height = 10;
+        let y = Math.min(42, bossTop - height - 4);
+        if (!Number.isFinite(y) || y < 36) {
+            // Sem faixa livre no topo (ex.: celular deitado): borda inferior.
+            y = canvas.height - height - 2;
+        }
+        return { mode: "compact", width, height, x, y };
+    }
 
-        ctx.save();
-        ctx.fillStyle = "rgba(8, 17, 29, 0.88)";
-        ctx.fillRect(x - 10, y - 24, width + 20, 58);
-        ctx.strokeStyle = "rgba(101, 184, 255, 0.38)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x - 10, y - 24, width + 20, 58);
-
-        ctx.fillStyle = "#8CCBFF";
-        ctx.font = "bold 11px Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.shadowColor = "#168BFF";
-        ctx.shadowBlur = 8;
-        ctx.fillText("BOSS · VIDA DO CHEFE", canvas.width / 2, y - 7);
-        ctx.shadowBlur = 0;
-
+    function drawHudBar(ctx, layout, ratio) {
+        const { width, height, x, y } = layout;
         ctx.fillStyle = "#303743";
         ctx.fillRect(x, y, width, height);
-        const ratio = boss.maxHP > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHP)) : 0;
         ctx.fillStyle = "#168BFF";
         ctx.shadowColor = "#168BFF";
         ctx.shadowBlur = 10;
@@ -939,11 +957,50 @@
         ctx.strokeStyle = "rgba(255,255,255,0.28)";
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, width, height);
+    }
+
+    function drawHUD(ctx, canvas) {
+        if (phase !== "FIGHT") return;
+        if (!ctx || !canvas) return;
+
+        const layout = getHudLayout(canvas);
+        const { width, height, x, y } = layout;
+        const ratio = boss.maxHP > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHP)) : 0;
+        const hpText = Math.ceil(boss.hp) + " / " + Math.ceil(boss.maxHP);
+
+        ctx.save();
+
+        if (layout.mode === "compact") {
+            drawHudBar(ctx, layout, ratio);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 8px Arial";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "left";
+            ctx.shadowColor = "#000000";
+            ctx.shadowBlur = 3;
+            ctx.fillText("BOSS", x + 6, y + height / 2);
+            ctx.textAlign = "right";
+            ctx.fillText(hpText, x + width - 6, y + height / 2);
+            ctx.restore();
+            return;
+        }
+
+        // Titulo discreto, sem painel de fundo sobre o chefe.
+        ctx.fillStyle = "#8CCBFF";
+        ctx.font = "bold 10px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.shadowColor = "#168BFF";
+        ctx.shadowBlur = 8;
+        ctx.fillText("BOSS · VIDA DO CHEFE", canvas.width / 2, y - 3);
+        ctx.shadowBlur = 0;
+
+        drawHudBar(ctx, layout, ratio);
 
         ctx.fillStyle = "#FFFFFF";
-        ctx.font = "bold 10px Arial";
+        ctx.font = "bold 9px Arial";
         ctx.textBaseline = "top";
-        ctx.fillText(Math.ceil(boss.hp) + " / " + Math.ceil(boss.maxHP) + " HP", canvas.width / 2, y + height + 4);
+        ctx.fillText(hpText + " HP", canvas.width / 2, y + height + 3);
         ctx.restore();
     }
 

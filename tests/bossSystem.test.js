@@ -654,3 +654,86 @@ test("electric wall ricochets leave visible temporary damage trails", () => {
     }
     assert.equal(observedTrail, true);
 });
+
+// HUD do chefe: a barra nunca pode ser desenhada sobre o corpo do Boss.
+function startFightIn(size) {
+    const arenaSize = { width: size.width, height: size.height };
+    boss.reset();
+    boss.start(arenaSize, { x: arenaSize.width / 2, y: arenaSize.height / 2, radius: 15 });
+    const game = createCombat(["ray", "white", "electric", "boss"]);
+    let guard = 0;
+    while (boss.getState().phase !== "FIGHT" && guard++ < 20) {
+        boss.update(0.5, arenaSize, { x: 10, y: arenaSize.height - 10, radius: 15 }, game.health, game.collision);
+    }
+    assert.equal(boss.getState().phase, "FIGHT");
+    return arenaSize;
+}
+
+function captureHud(canvas) {
+    const rects = [];
+    const texts = [];
+    let fontSize = 10;
+    let baseline = "alphabetic";
+    const ctx = {
+        save() {},
+        restore() {},
+        set fillStyle(_) {},
+        set strokeStyle(_) {},
+        set lineWidth(_) {},
+        set shadowColor(_) {},
+        set shadowBlur(_) {},
+        set textAlign(_) {},
+        set font(value) {
+            const match = /(\d+(?:\.\d+)?)px/.exec(String(value));
+            fontSize = match ? Number(match[1]) : 10;
+        },
+        set textBaseline(value) { baseline = value; },
+        fillRect(x, y, w, h) { rects.push({ x, y, w, h }); },
+        strokeRect(x, y, w, h) { rects.push({ x, y, w, h }); },
+        fillText(text, x, y) { texts.push({ text, x, y, size: fontSize, baseline }); }
+    };
+    boss.drawHUD(ctx, canvas);
+    return { rects, texts };
+}
+
+function hudVerticalBounds(hud) {
+    const tops = hud.rects.map(r => r.y);
+    const bottoms = hud.rects.map(r => r.y + r.h);
+    for (const t of hud.texts) {
+        const top = t.baseline === "bottom" ? t.y - t.size : t.y;
+        tops.push(top);
+        bottoms.push(top + t.size);
+    }
+    return { top: Math.min(...tops), bottom: Math.max(...bottoms) };
+}
+
+test("boss HUD stays fully above the boss body on desktop and portrait mobile", () => {
+    for (const size of [{ width: 1920, height: 1080 }, { width: 390, height: 844 }, { width: 1366, height: 768 }]) {
+        const arenaSize = startFightIn(size);
+        const state = boss.getState();
+        const hud = captureHud(arenaSize);
+        assert.ok(hud.rects.length > 0, `HUD deve desenhar em ${size.width}x${size.height}`);
+        const bounds = hudVerticalBounds(hud);
+        const bossTop = state.boss.y - state.boss.size / 2;
+        assert.ok(bounds.top >= 0, `HUD fora do topo em ${size.width}x${size.height}`);
+        assert.ok(
+            bounds.bottom <= bossTop,
+            `HUD (ate ${bounds.bottom.toFixed(1)}) sobrepoe o Boss (topo ${bossTop.toFixed(1)}) em ${size.width}x${size.height}`
+        );
+    }
+});
+
+test("boss HUD docks to the bottom when there is no room above the boss", () => {
+    const size = { width: 844, height: 390 };
+    const arenaSize = startFightIn(size);
+    const state = boss.getState();
+    const hud = captureHud(arenaSize);
+    const bounds = hudVerticalBounds(hud);
+    const bossBottom = state.boss.y + state.boss.size / 2;
+    assert.ok(bossBottom > 44, "cenario deitado deve ter o Boss ocupando o topo");
+    assert.ok(
+        bounds.top >= bossBottom,
+        `HUD (topo ${bounds.top.toFixed(1)}) sobrepoe o Boss (base ${bossBottom.toFixed(1)})`
+    );
+    assert.ok(bounds.bottom <= arenaSize.height, "HUD nao deve sair da tela");
+});
