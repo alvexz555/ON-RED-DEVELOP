@@ -1553,18 +1553,39 @@ function drawScore() {
             18
         );
 
-        // BARRA DE APRESENTAÇÃO DO BOSS FINAL (FASE 1) — visível a partir de 5.000, pisca em 18.000.
+        // PREPARAÇÃO PARA O BOSS: a barra azul representa a aproximação,
+        // não a vida do chefe. O aviso textual dá contexto ao indicador.
         if (window.ONREDBossSystem) {
             const appearanceFrom = 5000;
             const blinkAt = 18000;
-            const ratio = Math.min(1, scoreState.value / window.ONREDBossSystem.getConfig().triggerScore);
+            const triggerScore = window.ONREDBossSystem.getConfig().triggerScore;
+            const ratio = Math.min(1, scoreState.value / triggerScore);
             if (scoreState.value >= appearanceFrom) {
+                const barWidth = getWorld().width;
+                const bossPhaseNow = window.ONREDBossSystem.getState().phase;
+                ctx.save();
+                ctx.fillStyle = "rgba(48, 55, 67, 0.72)";
+                ctx.fillRect(0, 6, barWidth, 4);
                 ctx.globalAlpha = scoreState.value >= blinkAt
-                    ? (Math.sin(Date.now() / 250) > 0 ? 0.95 : 0.15)
+                    ? (Math.sin(Date.now() / 250) > 0 ? 1 : 0.35)
                     : 0.95;
                 ctx.fillStyle = "#168BFF";
-                ctx.fillRect(0, 6, getWorld().width * ratio, 2);
-                ctx.globalAlpha = 1;
+                ctx.shadowColor = "#168BFF";
+                ctx.shadowBlur = 8;
+                ctx.fillRect(0, 6, barWidth * ratio, 4);
+                ctx.restore();
+
+                if (bossPhaseNow === "IDLE") {
+                    ctx.save();
+                    ctx.fillStyle = "#8CCBFF";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "top";
+                    ctx.font = "bold 10px Arial";
+                    ctx.shadowColor = "#168BFF";
+                    ctx.shadowBlur = 9;
+                    ctx.fillText("O INIMIGO SE APROXIMA", getWorld().width / 2, 44);
+                    ctx.restore();
+                }
             }
         }
     }
