@@ -906,27 +906,44 @@
         if (phase !== "FIGHT") return;
         if (!ctx || !canvas) return;
 
-        const width = Math.min(420, canvas.width * 0.55);
-        const height = 8;
+        // Faixa própria abaixo do HUD do jogador: evita sobrepor HP e vidas.
+        const width = Math.min(460, canvas.width * 0.78);
+        const height = 12;
         const x = (canvas.width - width) / 2;
-        const y = 66;
+        const y = 132;
 
         ctx.save();
+        ctx.fillStyle = "rgba(8, 17, 29, 0.88)";
+        ctx.fillRect(x - 10, y - 24, width + 20, 58);
+        ctx.strokeStyle = "rgba(101, 184, 255, 0.38)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 10, y - 24, width + 20, 58);
+
+        ctx.fillStyle = "#8CCBFF";
+        ctx.font = "bold 11px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.shadowColor = "#168BFF";
+        ctx.shadowBlur = 8;
+        ctx.fillText("BOSS · VIDA DO CHEFE", canvas.width / 2, y - 7);
+        ctx.shadowBlur = 0;
+
         ctx.fillStyle = "#303743";
         ctx.fillRect(x, y, width, height);
         const ratio = boss.maxHP > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHP)) : 0;
-        ctx.fillStyle = "#FF303F";
+        ctx.fillStyle = "#168BFF";
+        ctx.shadowColor = "#168BFF";
+        ctx.shadowBlur = 10;
         ctx.fillRect(x, y, width * ratio, height);
-        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255,255,255,0.28)";
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, width, height);
+
         ctx.fillStyle = "#FFFFFF";
         ctx.font = "bold 10px Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.fillText("BOSS", canvas.width / 2, y - 8);
         ctx.textBaseline = "top";
-        ctx.fillText(Math.ceil(boss.hp) + " / " + Math.ceil(boss.maxHP), canvas.width / 2, y + height + 10);
+        ctx.fillText(Math.ceil(boss.hp) + " / " + Math.ceil(boss.maxHP) + " HP", canvas.width / 2, y + height + 4);
         ctx.restore();
     }
 
