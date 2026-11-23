@@ -109,10 +109,12 @@
       if(state.laser.t<=0 && state.laser.phase==="warning"){state.laser.phase="active";state.laser.t=TUNING.laserActive;}
       else if(state.laser.t<=0){state.laser=null;state.laserTimer=TUNING.laserInterval;}
       if(state.laser?.phase==="active"){
-        const l=state.laser, gapStart=l.gap*(l.axis==="h"?innerWidth:innerHeight)-55;
-        const coord=l.axis==="h"?state.y:state.x, span=l.axis==="h"?innerWidth:innerHeight;
-        const safe=coord<gapStart||coord>gapStart+110;
-        if(!safe && (l.axis==="h"?Math.abs(state.y-l.at)<13:Math.abs(state.x-l.at)<13)) damage(20*dt);
+        const l=state.laser, span=l.axis==="h"?innerWidth:innerHeight;
+        const along=l.axis==="h"?state.x:state.y;
+        const gapStart=l.gap*span-55;
+        const insideGap=along>=gapStart && along<=gapStart+110;
+        const onBeam=l.axis==="h"?Math.abs(state.y-l.at)<13:Math.abs(state.x-l.at)<13;
+        if(onBeam && !insideGap) damage(20*dt);
       }
     }
     for(const z of state.zones){z.life-=dt;if(dist(z,state)<z.r+TUNING.playerRadius){state.energy=clamp(state.energy+TUNING.energyPerZone,0,100);z.life=0;state.message="ENERGIA +25%";state.messageTimer=0.8;}}
@@ -147,7 +149,18 @@
     ctx.strokeStyle="rgba(60,145,210,.08)";ctx.lineWidth=1;for(let x=0;x<w;x+=36){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}for(let y=0;y<h;y+=36){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
     for(const z of state.zones){ctx.beginPath();ctx.arc(z.x,z.y,z.r,0,Math.PI*2);ctx.fillStyle="rgba(22,139,255,.18)";ctx.fill();ctx.strokeStyle="#58BFFF";ctx.lineWidth=2;ctx.stroke();ctx.fillStyle="#FFF";ctx.font="bold 10px Arial";ctx.textAlign="center";ctx.fillText("+25",z.x,z.y+4);}
     for(const m of state.merges){ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.fillStyle="#FF3948";ctx.shadowColor="#FF3948";ctx.shadowBlur=15;ctx.fill();ctx.shadowBlur=0;}
-    if(state.laser){const l=state.laser;ctx.save();ctx.strokeStyle=l.phase==="warning"?"rgba(255,57,72,.45)":"#FF3948";ctx.lineWidth=l.phase==="warning"?2:14;ctx.setLineDash(l.phase==="warning"?[8,8]:[]);ctx.beginPath();if(l.axis==="h"){ctx.moveTo(0,l.at);ctx.lineTo(w,l.at);}else{ctx.moveTo(l.at,0);ctx.lineTo(l.at,h);}ctx.stroke();ctx.restore();}
+    if(state.laser){
+      const l=state.laser, span=l.axis==="h"?w:h, gapStart=l.gap*span-55, gapEnd=gapStart+110;
+      ctx.save();ctx.strokeStyle=l.phase==="warning"?"rgba(255,57,72,.55)":"#FF3948";
+      ctx.lineWidth=l.phase==="warning"?2:14;ctx.setLineDash(l.phase==="warning"?[8,8]:[]);
+      ctx.beginPath();
+      if(l.axis==="h"){ctx.moveTo(0,l.at);ctx.lineTo(gapStart,l.at);ctx.moveTo(gapEnd,l.at);ctx.lineTo(w,l.at);}
+      else{ctx.moveTo(l.at,0);ctx.lineTo(l.at,gapStart);ctx.moveTo(l.at,gapEnd);ctx.lineTo(l.at,h);}
+      ctx.stroke();ctx.restore();
+      ctx.fillStyle="#58BFFF";ctx.font="bold 10px Arial";ctx.textAlign="center";
+      if(l.axis==="h")ctx.fillText("BRECHA SEGURA",clamp((gapStart+gapEnd)/2,65,w-65),l.at-12);
+      else ctx.fillText("BRECHA SEGURA",l.at+58,clamp((gapStart+gapEnd)/2,50,h-50));
+    }
     state.saws.forEach(drawSaw);
     if(state.boss){const b=state.boss;ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle);ctx.fillStyle="#168BFF";ctx.strokeStyle="#9BD8FF";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(0,-b.r);ctx.lineTo(b.r*.92,b.r*.72);ctx.lineTo(-b.r*.92,b.r*.72);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();ctx.fillStyle="#263648";ctx.fillRect(w*.2,20,w*.6,8);ctx.fillStyle="#168BFF";ctx.fillRect(w*.2,20,w*.6*(b.hp/b.maxHP),8);ctx.fillStyle="#FFF";ctx.font="bold 11px Arial";ctx.textAlign="center";ctx.fillText("SERRA GIGANTE",w/2,15);}
     ctx.beginPath();ctx.arc(state.x,state.y,TUNING.playerRadius,0,Math.PI*2);ctx.fillStyle=state.energy>=100?"#FFFFFF":`rgb(255,${Math.round(57+198*state.energy/100)},${Math.round(72+183*state.energy/100)})`;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=state.dashTime>0?24:10;ctx.fill();ctx.shadowBlur=0;
