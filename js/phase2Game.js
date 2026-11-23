@@ -131,8 +131,9 @@
       const b=state.boss;b.angle+=dt*0.65;
       const d=dist(b,state)||1;b.x+=(state.x-b.x)/d*22*dt;b.y+=(state.y-b.y)/d*22*dt;
       if(dist(b,state)<b.r+TUNING.playerRadius && state.dashTime<=0) damage(25*dt);
-      if(state.dashTime>0 && state.energy>=0 && dist(b,state)<b.r+42){
-        b.hp=Math.max(0,b.hp-TUNING.bossDashDamage*dt*4);
+      if(state.dashTime>0 && state.energy>=100 && dist(b,state)<b.r+42){
+        state.energy=0;
+        b.hp=Math.max(0,b.hp-TUNING.bossDashDamage);
         if(b.hp===0){state.victory=true;state.message="FASE 2 CONCLUÍDA";try{localStorage.setItem("onRedPhase3Unlocked","true");}catch(e){}}
       }
     }
@@ -159,6 +160,7 @@
   }
   function frame(ts){if(!state.active)return;const dt=state.last?Math.min((ts-state.last)/1000,.04):0;state.last=ts;update(dt);draw();requestAnimationFrame(frame);}
   function launch(){reset();document.getElementById("mainMenu")?.classList.add("hidden");requestAnimationFrame(frame);}
+  document.getElementById("phaseTwoButton")?.addEventListener("click",launch);
   function exit(){state.active=false;state.paused=false;keys.clear();state.pointer=null;document.getElementById("mainMenu")?.classList.remove("hidden");}
   window.addEventListener("keydown",e=>{if(!state.active)return;keys.add(e.code);if(e.code==="ShiftLeft"||e.code==="ShiftRight")startDash();if(e.code==="Escape"){e.preventDefault();if(state.over||state.victory)exit();else state.paused=!state.paused;}if((state.over||state.victory)&&e.code==="Enter")launch();});
   window.addEventListener("keyup",e=>keys.delete(e.code));
