@@ -20,7 +20,7 @@
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.lives,
-    energy: 0, dashCooldown: 0, dashTime: 0, invuln: 0,
+    energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, invuln: 0,
     x: 0, y: 0, vx: 0, vy: 0, last: 0,
     saws: [], zones: [], merges: [], laser: null,
     laserTimer: 2.5, zoneTimer: 1, mergeTimer: 3,
@@ -42,7 +42,7 @@
   function reset() {
     state.active=true; state.paused=false; state.over=false; state.victory=false;
     state.time=0; state.score=0; state.hp=TUNING.maxHP; state.lives=TUNING.lives;
-    state.energy=0; state.dashCooldown=0; state.dashTime=0; state.invuln=1.2;
+    state.energy=0; state.dashCooldown=0; state.dashTime=0; state.dashCharged=false; state.invuln=1.2;
     state.x=innerWidth/2; state.y=innerHeight/2; state.vx=0; state.vy=0;
     state.saws=[]; state.zones=[]; state.merges=[]; state.laser=null;
     state.laserTimer=2.5; state.zoneTimer=1; state.mergeTimer=3; state.boss=null;
@@ -76,7 +76,7 @@
   }
   function startDash() {
     if(!state.active || state.paused || state.over || state.victory || state.dashCooldown>0 || state.energy<TUNING.dashCost) return;
-    state.energy-=TUNING.dashCost; state.dashTime=TUNING.dashDuration; state.dashCooldown=TUNING.dashCooldown;
+    state.dashCharged=state.energy>=100; state.energy-=TUNING.dashCost; state.dashTime=TUNING.dashDuration; state.dashCooldown=TUNING.dashCooldown;
     const len=Math.hypot(state.vx,state.vy);
     if(len>0){state.vx=state.vx/len*760;state.vy=state.vy/len*760;}
     else {state.vx=0;state.vy=-760;}
@@ -133,8 +133,8 @@
       const b=state.boss;b.angle+=dt*0.65;
       const d=dist(b,state)||1;b.x+=(state.x-b.x)/d*22*dt;b.y+=(state.y-b.y)/d*22*dt;
       if(dist(b,state)<b.r+TUNING.playerRadius && state.dashTime<=0) damage(25*dt);
-      if(state.dashTime>0 && state.energy>=100 && dist(b,state)<b.r+42){
-        state.energy=0;
+      if(state.dashTime>0 && state.dashCharged && dist(b,state)<b.r+42){
+        state.dashCharged=false; state.energy=0;
         b.hp=Math.max(0,b.hp-TUNING.bossDashDamage);
         if(b.hp===0){state.victory=true;state.message="FASE 2 CONCLUÍDA";try{localStorage.setItem("onRedPhase3Unlocked","true");}catch(e){}}
       }
