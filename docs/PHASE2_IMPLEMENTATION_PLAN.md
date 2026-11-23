@@ -6,7 +6,7 @@
 
 ## Regra de isolamento
 
-A Fase 2 será construída em módulos novos. Nenhuma mecânica, arquivo ou parâmetro da Fase 1 será alterado para acomodá-la. A integração no motor principal e a liberação no menu ficam para uma etapa posterior, depois dos testes isolados e da aprovação do responsável pelo projeto.
+A Fase 2 será construída em módulos novos. Nenhuma mecânica, arquivo ou parâmetro da Fase 1 será alterado para acomodá-la. A integração no motor principal da Fase 1 e a liberação na versão pública continuam proibidas. A Fase 2 é iniciada pelo menu desta branch de desenvolvimento, sem substituir o runtime original.
 
 ## Identidade preservada
 
@@ -34,6 +34,14 @@ A Fase 2 será construída em módulos novos. Nenhuma mecânica, arquivo ou par�
 Não serão inventados nesta etapa: HP e padrões completos do Boss, velocidade de carga, frequência/quantidade/duração das áreas elétricas, decaimento de energia, perda de energia ao receber dano, consumo de energia por DASH, dano por acerto, alcance do golpe, parâmetros de serras, temporização e geometria dos lasers, regra exata do MERGE adaptado e balanceamento da dificuldade.
 
 Esses parâmetros devem ser configuráveis e só serão fixados após testes de gameplay e decisão explícita.
+
+## Implementação já presente na branch de desenvolvimento
+
+- `js/phase2System.js`: modelo de estado e regras-base testáveis isoladamente.
+- `js/phase2Game.js`: runtime jogável isolado, com movimento por teclado/toque, serras perseguidoras, zonas de carga elétrica, DASH, lasers com brechas, MERGE, HUD e Serra Gigante.
+- `index.html`: opção para iniciar a Fase 2 no menu desta versão de desenvolvimento.
+- A Fase 2 não é carregada pelo projeto público original; os arquivos do motor da Fase 1 não foram editados nesta branch.
+- Valores de gameplay no objeto `TUNING` de `phase2Game.js` são parâmetros iniciais de playtest, não balanceamento final aprovado.
 
 ## Sequência de implementação
 
