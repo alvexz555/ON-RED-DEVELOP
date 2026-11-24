@@ -84,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -183,6 +183,7 @@
     state.dashTime = 0;
     state.dashCharged = false;
     state.invuln = 1.2;
+    state.shieldHitsRemaining = 0;
     state.x = innerWidth / 2;
     state.y = innerHeight / 2;
     state.vx = 0;
@@ -484,7 +485,7 @@
       return "pingpong";
     }
 
-    const effects = ["gravity", "ghost", "invert", "freeze", "extraLives"];
+    const effects = ["gravity", "ghost", "invert", "freeze"];
     const chosen = effects[Math.floor(Math.random() * effects.length)];
     if (chosen === "gravity") {
       state.effects.gravity = TUNING.gravityDuration;
@@ -500,14 +501,6 @@
     } else if (chosen === "freeze") {
       state.effects.freeze = TUNING.freezeDuration;
       state.message = "TEMPO CONGELADO";
-    } else {
-      if (state.lives < TUNING.maxLives) {
-        state.lives += 1;
-        state.message = "+1 VIDA EXTRA";
-      } else {
-        state.energy = clamp(state.energy + 25, 0, TUNING.maxEnergy);
-        state.message = "LIMITE DE VIDAS · +25 ENERGIA";
-      }
     }
     state.messageTimer = 1.4;
     return chosen;
@@ -540,6 +533,15 @@
 
   function damage(amount, message = "IMPACTO", bypassInvulnerability = false) {
     if ((!bypassInvulnerability && state.invuln > 0) || state.over || state.victory || amount <= 0) return false;
+    if (state.shieldHitsRemaining > 0) {
+      state.shieldHitsRemaining -= 1;
+      state.invuln = 0.9;
+      state.message = state.shieldHitsRemaining > 0
+        ? "ESCUDO · " + state.shieldHitsRemaining + "/3 GOLPES"
+        : "ESCUDO DESTRUÍDO";
+      state.messageTimer = 0.9;
+      return true;
+    }
     state.hp = Math.max(0, state.hp - amount);
     state.invuln = 0.9;
     state.message = message;
@@ -719,9 +721,7 @@
         if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
-          state.score += 500;
-          state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
-          state.message = "SERRA DESTRUÍDA · +500";
+          state.message = "SERRA DESTRUÍDA";
           state.messageTimer = 0.8;
           sawKillsThisFrame++;
         } else {
@@ -756,9 +756,10 @@
     state.saws = state.saws.filter(saw => saw.hp > 0);
     if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
       state.hp = TUNING.maxHP;
-      state.lives = TUNING.maxLives;
-      state.message = "ONDA CONCLUÍDA · HP E VIDAS RESTAURADOS";
-      state.messageTimer = 2.2;
+      if (state.lives < TUNING.maxLives) state.lives += 1;
+      state.shieldHitsRemaining = 3;
+      state.message = "ONDA CONCLUÍDA · +1 VIDA · HP RESTAURADO · ESCUDO 3 GOLPES";
+      state.messageTimer = 2.8;
     }
   }
 
@@ -1186,12 +1187,19 @@
     ctx.beginPath();
     ctx.arc(state.x, state.y, TUNING.playerRadius, 0, Math.PI * 2);
     const colorRatio = clamp(state.energy / TUNING.maxEnergy, 0, 1);
-    ctx.fillStyle = "rgb(255," +
+    ctx.fillStyle = state.shieldHitsRemaining > 0 ? "#168BFF" : "rgb(255," +
       Math.round(107 + (255 - 107) * colorRatio) + "," +
       Math.round(112 + (255 - 112) * colorRatio) + ")";
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = state.dashTime > 0 ? 24 : 10;
+    ctx.shadowColor = state.shieldHitsRemaining > 0 ? "#58BFFF" : ctx.fillStyle;
+    ctx.shadowBlur = state.shieldHitsRemaining > 0 ? 22 : (state.dashTime > 0 ? 24 : 10);
     ctx.fill();
+    if (state.shieldHitsRemaining > 0) {
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, TUNING.playerRadius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(88,191,255,.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     ctx.shadowBlur = 0;
     if (state.invuln > 0 && Math.floor(state.time * 16) % 2 === 0) {
       ctx.beginPath();
@@ -1242,8 +1250,30 @@
     requestAnimationFrame(frame);
   }
 
+  function syncCanvasForPhaseTwo() {
+    // A Fase 2 desenha em coordenadas da viewport. Reaplica a escala
+    // física do Canvas ao entrar, sem herdar a transformação da Fase 1.
+    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+
+    canvas.style.position = "fixed";
+    canvas.style.left = "0";
+    canvas.style.top = "0";
+    canvas.style.width = "100vw";
+    canvas.style.height = "100vh";
+    canvas.style.display = "block";
+
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
   function launch() {
     const startLoop = !state.active;
+    syncCanvasForPhaseTwo();
     reset();
     hideAllScreens();
     if (ui.mainMenu) ui.mainMenu.classList.add("hidden");
@@ -1368,6 +1398,7 @@
   });
 
   window.addEventListener("resize", () => {
+    if (state.active) syncCanvasForPhaseTwo();
     state.x = clamp(state.x || innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
     state.y = clamp(state.y || innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
     resetJoystick();
