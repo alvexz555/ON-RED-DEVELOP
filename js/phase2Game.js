@@ -84,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, frameStartX: 0, frameStartY: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -183,11 +183,9 @@
     state.dashTime = 0;
     state.dashCharged = false;
     state.invuln = 1.2;
+    state.shieldHitsRemaining = 0;
     state.x = innerWidth / 2;
     state.y = innerHeight / 2;
-    state.frameStartX = state.x;
-    state.frameStartY = state.y;
-    state.shieldHitsRemaining = 0;
     state.vx = 0;
     state.vy = 0;
     state.knockbackTime = 0;
@@ -584,12 +582,12 @@
     state.energy = Math.max(0, state.energy - TUNING.dashCost);
     state.dashTime = TUNING.dashDuration;
     state.dashCooldown = TUNING.dashCooldown;
-    state.dashEffectRolled = false;
     button.flash = 0.25;
 
     // O DASH cancela o empurrão recebido: não reutiliza a velocidade do knockback.
     const wasKnockedBack = state.knockbackTime > 0;
     state.knockbackTime = 0;
+    state.dashEffectRolled = false;
     if (wasKnockedBack) {
       state.vx = 0;
       state.vy = 0;
@@ -671,7 +669,7 @@
     state.knockbackTime = 0.22;
   }
 
-  function updateSaws(dt) {
+  function updateSaws(dt, previousPlayerX, previousPlayerY) {
     if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
 
@@ -694,8 +692,9 @@
 
     let sawKillsThisFrame = 0;
     for (const saw of state.saws) {
-      const sawStartX = saw.x;
-      const sawStartY = saw.y;
+      if (saw.hp <= 0) continue;
+      const previousSawX = saw.x;
+      const previousSawY = saw.y;
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
       if (saw.stun <= 0) {
@@ -706,24 +705,25 @@
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
-
-      // Colisão varrida pela trajetória relativa completa do frame.
-      const relativeStartX = state.frameStartX - sawStartX;
-      const relativeStartY = state.frameStartY - sawStartY;
-      const relativeEndX = state.x - saw.x;
-      const relativeEndY = state.y - saw.y;
-      const hitRadius = saw.r + TUNING.playerRadius;
-      const sweptHit = segmentDistanceSquared(
-        0, 0, relativeStartX, relativeStartY, relativeEndX, relativeEndY
-      ) <= hitRadius * hitRadius;
-
-      if (sweptHit) {
+      const collisionRadius = saw.r + TUNING.playerRadius;
+      const sweptDashHit = state.dashTime > 0 &&
+        segmentDistanceSquared(
+          0, 0,
+          previousPlayerX - previousSawX,
+          previousPlayerY - previousSawY,
+          state.x - saw.x,
+          state.y - saw.y
+        ) <= collisionRadius * collisionRadius;
+      const touchingPlayer = state.dashTime > 0
+        ? sweptDashHit
+        : circleHit(saw, saw.r, state, TUNING.playerRadius);
+      if (touchingPlayer) {
         if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
-          sawKillsThisFrame++;
           state.message = "SERRA DESTRUÍDA";
           state.messageTimer = 0.8;
+          sawKillsThisFrame++;
         } else {
           if (state.invuln <= 0) applyKnockback(saw.x, saw.y, TUNING.sawKnockback);
           damage(TUNING.sawDamage, "SERRA · -20 HP");
@@ -747,7 +747,7 @@
       }
     }
 
-    // Mantém um único efeito aleatório por evento de DASH, mesmo no multi-kill.
+    // Uma única rolagem por evento de DASH, mesmo destruindo várias serras.
     if (sawKillsThisFrame > 0 && !state.dashEffectRolled) {
       state.dashEffectRolled = true;
       activateRandomEffect();
@@ -858,6 +858,8 @@
     for (const key of Object.keys(state.effects)) state.effects[key] = Math.max(0, state.effects[key] - dt);
     if (state.effects.gravity <= 0) state.gravityPoint = null;
 
+    const previousPlayerX = state.x;
+    const previousPlayerY = state.y;
     let ix = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
              (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
     let iy = (keys.has("ArrowDown") || keys.has("KeyS") ? 1 : 0) -
@@ -868,8 +870,6 @@
     }
     if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
-    state.frameStartX = state.x;
-    state.frameStartY = state.y;
     if (state.dashTime <= 0 && state.knockbackTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
       state.vy = (iy / inputLength) * TUNING.playerSpeed;
@@ -930,7 +930,7 @@
     state.merges = state.merges.filter(orb => orb.life > 0);
 
     updatePingPongs(dt);
-    updateSaws(dt);
+    updateSaws(dt, previousPlayerX, previousPlayerY);
     updateLasers(dt);
     if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
     if (state.effects.freeze <= 0) updateBoss(dt);
@@ -1061,12 +1061,6 @@
     ctx.textAlign = "left";
     ctx.fillStyle = "#AAB4C3";
     ctx.fillText("ENERGIA " + Math.floor(state.energy) + "%", barX, barY + 35);
-    if (state.shieldHitsRemaining > 0) {
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#58BFFF";
-      ctx.fillText("ESCUDO " + state.shieldHitsRemaining + "/3", barX + barWidth, barY + 35);
-      ctx.textAlign = "left";
-    }
     ctx.fillStyle = "#303743";
     ctx.fillRect(barX, barY + 42, barWidth, 5);
     ctx.fillStyle = "#168BFF";
@@ -1257,9 +1251,8 @@
   }
 
   function syncCanvasForPhaseTwo() {
-    // A Fase 1 usa uma escala lógica própria no mesmo contexto.
-    // A Fase 2 desenha em coordenadas da viewport, então restaura
-    // o backing store e o transform para ocupar a tela inteira.
+    // A Fase 2 desenha em coordenadas da viewport. Reaplica a escala
+    // física do Canvas ao entrar, sem herdar a transformação da Fase 1.
     const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
@@ -1275,7 +1268,6 @@
     const pixelHeight = Math.round(height * dpr);
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
