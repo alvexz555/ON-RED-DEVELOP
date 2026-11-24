@@ -12,8 +12,8 @@
 
   const TUNING = Object.freeze({
     maxHP: 80,
-    startingLives: 4,
-    maxLives: 5,
+    startingLives: 1,
+    maxLives: 4,
     energyPerZone: 25,
     maxEnergy: 100,
     dashCost: 25,
@@ -36,6 +36,11 @@
     bossTriggerSeconds: 105,
     bossHP: 1200,
     bossDashDamage: 200,
+    bossDashWarning: 0.85,
+    bossDashCooldown: 3.8,
+    bossDashSpeed: 1050,
+    bossKnockback: 720,
+    sawKnockback: 420,
     gravityDuration: 5,
     ghostDuration: 5,
     inversionDuration: 3,
@@ -79,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -182,6 +187,7 @@
     state.y = innerHeight / 2;
     state.vx = 0;
     state.vy = 0;
+    state.knockbackTime = 0;
     state.saws = [];
     state.zones = [];
     state.merges = [];
@@ -344,6 +350,7 @@
     state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
     state.vx = 0;
     state.vy = 0;
+    state.knockbackTime = 0;
     resetJoystick();
     state.dashTime = 0;
     keys.clear();
@@ -550,6 +557,7 @@
         // exata do impacto e interrompe somente o movimento.
         state.vx = 0;
         state.vy = 0;
+        state.knockbackTime = 0;
         resetJoystick();
         keys.clear();
         state.dashTime = 0;
@@ -574,6 +582,8 @@
     state.dashCooldown = TUNING.dashCooldown;
     button.flash = 0.25;
 
+    // O DASH do jogador neutraliza qualquer impulso de colisão recebido.
+    state.knockbackTime = 0;
     const length = Math.hypot(state.vx, state.vy);
     if (length > 0) {
       state.vx = state.vx / length * 760;
@@ -595,7 +605,14 @@
       hp: TUNING.bossHP,
       maxHP: TUNING.bossHP,
       angle: 0,
-      speed: 19
+      speed: 19,
+      dashState: "chase",
+      dashTimer: 2.2,
+      dashX: 0,
+      dashY: 0,
+      dashVX: 0,
+      dashVY: 0,
+      dashHit: false
     };
     state.saws = [];
     state.lasers = [];
@@ -635,6 +652,15 @@
     }
   }
 
+  function applyKnockback(sourceX, sourceY, force) {
+    if (state.dashTime > 0) return;
+    const dx = state.x - sourceX, dy = state.y - sourceY;
+    const length = Math.hypot(dx, dy) || 1;
+    state.vx = dx / length * force;
+    state.vy = dy / length * force;
+    state.knockbackTime = 0.22;
+  }
+
   function updateSaws(dt) {
     if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
@@ -656,6 +682,7 @@
       state.sawSpawnTimer = 6;
     }
 
+    let sawKillsThisFrame = 0;
     for (const saw of state.saws) {
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
@@ -675,8 +702,9 @@
           state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
           state.message = "SERRA DESTRUÍDA · +500";
           state.messageTimer = 0.8;
-          activateRandomEffect();
+          sawKillsThisFrame++;
         } else {
+          if (state.invuln <= 0) applyKnockback(saw.x, saw.y, TUNING.sawKnockback);
           damage(TUNING.sawDamage, "SERRA · -20 HP");
         }
       }
@@ -698,6 +726,8 @@
       }
     }
 
+    // Uma única rolagem por evento de DASH, mesmo destruindo várias serras.
+    if (sawKillsThisFrame > 0) activateRandomEffect();
     const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
     if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
@@ -715,11 +745,59 @@
     const dx = state.x - boss.x;
     const dy = state.y - boss.y;
     const length = Math.hypot(dx, dy) || 1;
-    boss.x += dx / length * boss.speed * dt;
-    boss.y += dy / length * boss.speed * dt;
 
-    if (circleHit(boss, boss.r, state, TUNING.playerRadius) && state.dashTime <= 0) {
-      damage(25, "BOSS · -25 HP");
+    if (boss.dashState === "warning") {
+      boss.dashTimer -= dt;
+      if (boss.dashTimer <= 0) {
+        boss.dashState = "charging";
+        boss.dashTimer = 0.42;
+        boss.dashVX = boss.dashX * TUNING.bossDashSpeed;
+        boss.dashVY = boss.dashY * TUNING.bossDashSpeed;
+        boss.dashHit = false;
+      }
+    } else if (boss.dashState === "charging") {
+      boss.x += boss.dashVX * dt;
+      boss.y += boss.dashVY * dt;
+      boss.dashTimer -= dt;
+      if (!boss.dashHit && circleHit(boss, boss.r, state, TUNING.playerRadius)) {
+        boss.dashHit = true;
+        if (state.dashTime <= 0) {
+          applyKnockback(boss.x, boss.y, TUNING.bossKnockback);
+          damage(30, "IMPACTO DO BOSS · -30 HP");
+        }
+      }
+      if (boss.dashTimer <= 0 || boss.x < -boss.r || boss.x > innerWidth + boss.r ||
+          boss.y < -boss.r || boss.y > innerHeight + boss.r) {
+        boss.dashState = "recovery";
+        boss.dashTimer = 0.72;
+        boss.x = clamp(boss.x, boss.r, innerWidth - boss.r);
+        boss.y = clamp(boss.y, boss.r, innerHeight - boss.r);
+      }
+    } else if (boss.dashState === "recovery") {
+      boss.dashTimer -= dt;
+      if (boss.dashTimer <= 0) {
+        boss.dashState = "chase";
+        boss.dashTimer = TUNING.bossDashCooldown;
+      }
+    } else {
+      boss.x += dx / length * boss.speed * dt;
+      boss.y += dy / length * boss.speed * dt;
+      boss.dashTimer -= dt;
+      if (boss.dashTimer <= 0) {
+        boss.dashState = "warning";
+        boss.dashTimer = TUNING.bossDashWarning;
+        boss.dashX = dx / length;
+        boss.dashY = dy / length;
+        state.message = "BOSS PREPARANDO DASH · DESVIE!";
+        state.messageTimer = TUNING.bossDashWarning;
+      }
+    }
+
+    if (boss.dashState !== "charging" && circleHit(boss, boss.r, state, TUNING.playerRadius)) {
+      if (state.dashTime <= 0) {
+        if (state.invuln <= 0) applyKnockback(boss.x, boss.y, TUNING.bossKnockback);
+        damage(25, "BOSS · -25 HP");
+      }
     }
 
     if (state.dashTime > 0 && state.dashCharged &&
@@ -765,15 +843,22 @@
     }
     if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
-    if (state.dashTime <= 0) {
+    if (state.dashTime <= 0 && state.knockbackTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
       state.vy = (iy / inputLength) * TUNING.playerSpeed;
     }
     state.x = clamp(state.x + state.vx * dt, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
     state.y = clamp(state.y + state.vy * dt, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
     if (state.dashTime <= 0) {
-      state.vx *= Math.pow(0.001, dt);
-      state.vy *= Math.pow(0.001, dt);
+      if (state.knockbackTime > 0) {
+        state.knockbackTime = Math.max(0, state.knockbackTime - dt);
+        const damping = Math.pow(0.035, dt);
+        state.vx *= damping;
+        state.vy *= damping;
+      } else {
+        state.vx *= Math.pow(0.001, dt);
+        state.vy *= Math.pow(0.001, dt);
+      }
     }
 
     state.zoneTimer -= dt;
@@ -1049,6 +1134,18 @@
 
     if (state.boss) {
       const boss = state.boss;
+      if (boss.dashState === "warning") {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,48,63,.9)";
+        ctx.lineWidth = 5;
+        ctx.setLineDash([12, 8]);
+        ctx.beginPath();
+        ctx.moveTo(boss.x, boss.y);
+        ctx.lineTo(boss.x + boss.dashX * Math.max(w, h) * 1.4,
+          boss.y + boss.dashY * Math.max(w, h) * 1.4);
+        ctx.stroke();
+        ctx.restore();
+      }
       drawSawShape(boss.x, boss.y, boss.r, boss.angle, 32, true);
       ctx.fillStyle = "#263648";
       ctx.fillRect(w * 0.2, 20, w * 0.6, 8);
