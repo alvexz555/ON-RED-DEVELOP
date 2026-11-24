@@ -1,9 +1,9 @@
-name: Deploy ON RED to GitHub Pages
+name: Deploy ON RED Develop to GitHub Pages
 
 on:
   push:
     branches:
-      - main
+      - preview/phase2-playtest-2026-11-24
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-preview
   cancel-in-progress: true
 
 jobs:
@@ -22,17 +22,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Phase 2 playtest branch
         uses: actions/checkout@v4
+        with:
+          ref: preview/phase2-playtest-2026-11-24
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload site artifact
+      - name: Upload development preview
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy Phase 2 preview
         id: deployment
         uses: actions/deploy-pages@v4
