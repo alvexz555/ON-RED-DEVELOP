@@ -1058,14 +1058,26 @@
       pauseGame();
     });
   }
-  if (ui.resumeButton) ui.resumeButton.addEventListener("click", resumeGame);
-  if (ui.pauseRestartButton) ui.pauseRestartButton.addEventListener("click", launch);
-  if (ui.pauseMenuButton) ui.pauseMenuButton.addEventListener("click", exit);
-  if (ui.reviveButton) ui.reviveButton.addEventListener("click", reviveGame);
-  if (ui.retryButton) ui.retryButton.addEventListener("click", launch);
-  if (ui.gameOverMenuButton) ui.gameOverMenuButton.addEventListener("click", exit);
-  if (ui.victoryRetryButton) ui.victoryRetryButton.addEventListener("click", continueAfterBoss);
-  if (ui.victoryMenuButton) ui.victoryMenuButton.addEventListener("click", exit);
+  // Estes botões são compartilhados com a Fase 1. Capturamos o clique
+  // antes dos listeners do runtime principal para impedir ações duplicadas.
+  function bindPhaseTwoAction(element, action) {
+    if (!element) return;
+    element.addEventListener("click", event => {
+      if (!state.active) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      action();
+    }, true);
+  }
+  bindPhaseTwoAction(ui.resumeButton, resumeGame);
+  bindPhaseTwoAction(ui.pauseRestartButton, launch);
+  bindPhaseTwoAction(ui.pauseMenuButton, exit);
+  bindPhaseTwoAction(ui.reviveButton, reviveGame);
+  bindPhaseTwoAction(ui.retryButton, launch);
+  bindPhaseTwoAction(ui.gameOverMenuButton, exit);
+  bindPhaseTwoAction(ui.victoryRetryButton, continueAfterBoss);
+  bindPhaseTwoAction(ui.victoryMenuButton, exit);
 
   // O botão é compartilhado com a Fase 1. A checagem por coordenada
   // mantém o comportamento correto mesmo quando o canvas captura outro toque.
