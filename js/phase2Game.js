@@ -225,7 +225,7 @@
     state.laserTimer -= dt;
     if (state.laserTimer <= 0) {
       spawnLaser();
-      state.laserTimer = TUNING.laserInterval;
+      state.laserTimer = state.time >= 55 ? 1.15 : state.time >= 20 ? 2.1 : TUNING.laserInterval;
     }
 
     for (const laser of state.lasers) {
