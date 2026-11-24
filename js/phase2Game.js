@@ -13,7 +13,7 @@
   const TUNING = Object.freeze({
     maxHP: 80,
     startingLives: 4,
-    maxLives: 6,
+    maxLives: 5,
     energyPerZone: 25,
     maxEnergy: 100,
     dashCost: 25,
@@ -45,6 +45,13 @@
   });
 
   const keys = new Set();
+  const hasTouchInput = typeof navigator !== "undefined" &&
+    (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+  const joystick = {
+    baseX: 115, baseY: 0, knobX: 115, knobY: 0,
+    radius: 55, knobRadius: 22, x: 0, y: 0,
+    active: false, pointerId: null, side: "left"
+  };
   const button = { size: 64, margin: 28, x: 0, y: 0, flash: 0 };
   const ui = {
     mainMenu: document.getElementById("mainMenu"),
@@ -86,9 +93,67 @@
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const circleHit = (a, ar, b, br) => dist(a, b) <= ar + br;
 
+  function updateJoystickPosition() {
+    let side = "left";
+    try { side = localStorage.getItem("onRedJoystickSide") === "right" ? "right" : "left"; } catch (_) {}
+    joystick.side = side;
+    joystick.baseX = side === "right" ? innerWidth - 115 : 115;
+    joystick.baseY = innerHeight - 115;
+    if (!joystick.active) {
+      joystick.knobX = joystick.baseX;
+      joystick.knobY = joystick.baseY;
+    }
+  }
+
   function updateButtonPosition() {
-    button.x = innerWidth - button.margin - button.size;
+    button.x = joystick.side === "right"
+      ? button.margin
+      : innerWidth - button.margin - button.size;
     button.y = innerHeight - button.margin - button.size;
+  }
+
+  function getCanvasPosition(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (innerWidth / (rect.width || innerWidth)),
+      y: (event.clientY - rect.top) * (innerHeight / (rect.height || innerHeight))
+    };
+  }
+
+  function updateJoystick(event) {
+    const pos = getCanvasPosition(event);
+    const dx = pos.x - joystick.baseX;
+    const dy = pos.y - joystick.baseY;
+    const distance = Math.hypot(dx, dy);
+    const limitedDistance = Math.min(distance, joystick.radius);
+    if (distance > 0) {
+      const angle = Math.atan2(dy, dx);
+      joystick.knobX = joystick.baseX + Math.cos(angle) * limitedDistance;
+      joystick.knobY = joystick.baseY + Math.sin(angle) * limitedDistance;
+      const strength = Math.min(distance / joystick.radius, 1);
+      joystick.x = (dx / distance) * strength;
+      joystick.y = (dy / distance) * strength;
+    } else {
+      joystick.x = 0;
+      joystick.y = 0;
+      joystick.knobX = joystick.baseX;
+      joystick.knobY = joystick.baseY;
+    }
+  }
+
+  function resetJoystick() {
+    const activePointerId = joystick.pointerId;
+    if (activePointerId !== null &&
+        typeof canvas.hasPointerCapture === "function" &&
+        canvas.hasPointerCapture(activePointerId)) {
+      try { canvas.releasePointerCapture(activePointerId); } catch (_) {}
+    }
+    joystick.x = 0;
+    joystick.y = 0;
+    joystick.knobX = joystick.baseX;
+    joystick.knobY = joystick.baseY;
+    joystick.active = false;
+    joystick.pointerId = null;
   }
 
   function reset() {
@@ -234,8 +299,7 @@
     if (!state.active || state.paused || state.over || state.victory) return false;
     state.paused = true;
     keys.clear();
-    state.pointer = null;
-    state.pointerId = null;
+    resetJoystick();
     state.vx = 0;
     state.vy = 0;
     state.last = 0;
@@ -251,8 +315,7 @@
     if (!state.active || !state.paused) return false;
     state.paused = false;
     keys.clear();
-    state.pointer = null;
-    state.pointerId = null;
+    resetJoystick();
     state.vx = 0;
     state.vy = 0;
     state.last = 0;
@@ -279,8 +342,7 @@
     state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
     state.vx = 0;
     state.vy = 0;
-    state.pointer = null;
-    state.pointerId = null;
+    resetJoystick();
     state.dashTime = 0;
     keys.clear();
     state.last = 0;
@@ -318,8 +380,7 @@
     state.active = false;
     state.paused = false;
     keys.clear();
-    state.pointer = null;
-    state.pointerId = null;
+    resetJoystick();
     state.vx = 0;
     state.vy = 0;
     hideAllScreens();
@@ -431,8 +492,13 @@
       state.effects.freeze = TUNING.freezeDuration;
       state.message = "TEMPO CONGELADO";
     } else {
-      state.lives = Math.min(TUNING.maxLives, state.lives + 2);
-      state.message = "+2 VIDAS";
+      if (state.lives < TUNING.maxLives) {
+        state.lives += 1;
+        state.message = "+1 VIDA EXTRA";
+      } else {
+        state.energy = clamp(state.energy + 25, 0, TUNING.maxEnergy);
+        state.message = "LIMITE DE VIDAS · +25 ENERGIA";
+      }
     }
     state.messageTimer = 1.4;
     return chosen;
@@ -478,12 +544,11 @@
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
-        state.x = clamp(innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
-        state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+        // A perda de uma vida não teleporta o jogador: preserva a posição
+        // exata do impacto e interrompe somente o movimento.
         state.vx = 0;
         state.vy = 0;
-        state.pointer = null;
-        state.pointerId = null;
+        resetJoystick();
         keys.clear();
         state.dashTime = 0;
         state.dashCharged = false;
@@ -692,9 +757,9 @@
              (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
     let iy = (keys.has("ArrowDown") || keys.has("KeyS") ? 1 : 0) -
              (keys.has("ArrowUp") || keys.has("KeyW") ? 1 : 0);
-    if (state.pointer) {
-      ix = clamp((state.pointer.x - state.pointer.ox) / 42, -1, 1);
-      iy = clamp((state.pointer.y - state.pointer.oy) / 42, -1, 1);
+    if (hasTouchInput) {
+      ix += joystick.x;
+      iy += joystick.y;
     }
     if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
@@ -890,6 +955,18 @@
 
   // Mesmo quadrado preenchido por carga usado pelo Perfect Timing da Fase 1.
   // Na Fase 2, a carga representa a recarga do DASH.
+  function drawJoystick() {
+    if (!hasTouchInput) return;
+    ctx.beginPath();
+    ctx.arc(joystick.baseX, joystick.baseY, joystick.radius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(180,180,180,0.3)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(joystick.knobX, joystick.knobY, joystick.knobRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fill();
+  }
+
   function drawDashButton() {
     const x = button.x, y = button.y, size = button.size;
     const padding = 5;
@@ -1005,6 +1082,7 @@
     ctx.textBaseline = "top";
     ctx.fillText(String(Math.floor(state.score)).padStart(6, "0"), w / 2, 18);
     drawHealthHUD();
+    drawJoystick();
     drawDashButton();
 
     if (state.messageTimer > 0) {
@@ -1125,48 +1203,54 @@
   });
 
   canvas.addEventListener("pointerdown", event => {
-    if (!state.active) return;
-    if (state.over || state.victory) { launch(); return; }
-    if (state.paused) { state.paused = false; state.last = 0; return; }
-
-    const rect = canvas.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const py = event.clientY - rect.top;
+    if (!state.active || state.paused || state.over || state.victory) return;
+    const pos = getCanvasPosition(event);
     const hitPadding = 12;
     const onDashButton =
-      px >= button.x - hitPadding && px <= button.x + button.size + hitPadding &&
-      py >= button.y - hitPadding && py <= button.y + button.size + hitPadding;
-    if (onDashButton) { startDash(); return; }
-
-    if (px < innerWidth * 0.58 && py > innerHeight * 0.42 && !state.pointer) {
-      state.pointerId = event.pointerId;
-      state.pointer = { ox: px, oy: py, x: px, y: py };
-      try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+      pos.x >= button.x - hitPadding && pos.x <= button.x + button.size + hitPadding &&
+      pos.y >= button.y - hitPadding && pos.y <= button.y + button.size + hitPadding;
+    if (onDashButton) {
+      event.preventDefault();
+      startDash();
+      return;
     }
+    if (!hasTouchInput || joystick.active ||
+        (event.pointerType !== "touch" && event.pointerType !== "pen")) return;
+    if (Math.hypot(pos.x - joystick.baseX, pos.y - joystick.baseY) > 90) return;
+    event.preventDefault();
+    joystick.active = true;
+    joystick.pointerId = event.pointerId;
+    try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+    updateJoystick(event);
   });
 
   canvas.addEventListener("pointermove", event => {
-    if (!state.active || state.pointerId !== event.pointerId || !state.pointer) return;
-    const rect = canvas.getBoundingClientRect();
-    state.pointer.x = event.clientX - rect.left;
-    state.pointer.y = event.clientY - rect.top;
+    if (!state.active || !joystick.active || joystick.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateJoystick(event);
   });
 
-  const releasePointer = event => {
-    if (state.pointerId === event.pointerId) {
-      state.pointer = null;
-      state.pointerId = null;
-    }
+  const releaseJoystick = event => {
+    if (joystick.pointerId === event.pointerId) resetJoystick();
   };
-  canvas.addEventListener("pointerup", releasePointer);
-  canvas.addEventListener("pointercancel", releasePointer);
+  canvas.addEventListener("pointerup", releaseJoystick);
+  canvas.addEventListener("pointercancel", releaseJoystick);
+
+  window.addEventListener("onred:joystick-side-change", () => {
+    resetJoystick();
+    updateJoystickPosition();
+    updateButtonPosition();
+  });
 
   window.addEventListener("resize", () => {
     state.x = clamp(state.x || innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
     state.y = clamp(state.y || innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+    resetJoystick();
+    updateJoystickPosition();
     updateButtonPosition();
   });
 
+  updateJoystickPosition();
   updateButtonPosition();
   window.ONREDPhase2Game = {
     start: launch,
