@@ -240,7 +240,7 @@
       ball.life -= dt;
       const hitRadius = ball.r + TUNING.playerRadius;
       if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
-        damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP");
+        damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP", true);
         ball.life = 0;
       }
     }
@@ -248,8 +248,8 @@
       ball.x > -40 && ball.x < innerWidth + 40 && ball.y > -40 && ball.y < innerHeight + 40);
   }
 
-  function damage(amount, message = "IMPACTO") {
-    if (state.invuln > 0 || state.over || state.victory || amount <= 0) return false;
+  function damage(amount, message = "IMPACTO", bypassInvulnerability = false) {
+    if ((!bypassInvulnerability && state.invuln > 0) || state.over || state.victory || amount <= 0) return false;
     state.hp = Math.max(0, state.hp - amount);
     state.invuln = 0.9;
     state.message = message;
