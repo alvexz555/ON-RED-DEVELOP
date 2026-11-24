@@ -667,7 +667,7 @@
     state.knockbackTime = 0.22;
   }
 
-  function updateSaws(dt) {
+  function updateSaws(dt, previousPlayerX, previousPlayerY) {
     if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
 
@@ -690,6 +690,9 @@
 
     let sawKillsThisFrame = 0;
     for (const saw of state.saws) {
+      if (saw.hp <= 0) continue;
+      const previousSawX = saw.x;
+      const previousSawY = saw.y;
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
       if (saw.stun <= 0) {
@@ -700,7 +703,19 @@
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
-      if (circleHit(saw, saw.r, state, TUNING.playerRadius)) {
+      const collisionRadius = saw.r + TUNING.playerRadius;
+      const sweptDashHit = state.dashTime > 0 &&
+        segmentDistanceSquared(
+          0, 0,
+          previousPlayerX - previousSawX,
+          previousPlayerY - previousSawY,
+          state.x - saw.x,
+          state.y - saw.y
+        ) <= collisionRadius * collisionRadius;
+      const touchingPlayer = state.dashTime > 0
+        ? sweptDashHit
+        : circleHit(saw, saw.r, state, TUNING.playerRadius);
+      if (touchingPlayer) {
         if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
@@ -842,6 +857,8 @@
     for (const key of Object.keys(state.effects)) state.effects[key] = Math.max(0, state.effects[key] - dt);
     if (state.effects.gravity <= 0) state.gravityPoint = null;
 
+    const previousPlayerX = state.x;
+    const previousPlayerY = state.y;
     let ix = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
              (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
     let iy = (keys.has("ArrowDown") || keys.has("KeyS") ? 1 : 0) -
@@ -912,7 +929,7 @@
     state.merges = state.merges.filter(orb => orb.life > 0);
 
     updatePingPongs(dt);
-    updateSaws(dt);
+    updateSaws(dt, previousPlayerX, previousPlayerY);
     updateLasers(dt);
     if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
     if (state.effects.freeze <= 0) updateBoss(dt);
