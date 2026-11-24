@@ -19,9 +19,13 @@ A Fase 2 será construída em módulos novos. Nenhuma mecânica, arquivo ou par�
 
 - HP máximo: **80**.
 - Total de vidas: **4**.
+- HUD de HP e vidas reaproveita a linguagem visual da Fase 1, com limites e regras independentes da Fase 2.
 - Energia elétrica máxima: **100%**.
 - Jogador começa em vermelho claro e clareia gradualmente até branco quando chega a 100%.
-- Serras menores: geometria rotativa, colisões e eliminação usando energia.
+- Serras menores: geometria rotativa, colisões e eliminação durante o DASH.
+- Pressão progressiva: 6 serras no início, 8 na etapa intermediária e até 10 na etapa avançada.
+- Lasers: 1 no início, até 2 na etapa intermediária e até 3 na etapa avançada, com brechas seguras e aviso prévio.
+- Botão quadrado de habilidade reaproveita o componente visual do Perfect Timing da Fase 1, mas executa DASH na Fase 2, com recarga visual e requisito de energia.
 - DASH: habilidade de deslocamento e mecanismo ofensivo contra a Serra Gigante.
 - Lasers com brechas: aviso antes do disparo e redução da área segura.
 - Áreas elétricas: pontos da arena para carregar energia.
@@ -38,7 +42,8 @@ Esses parâmetros devem ser configuráveis e só serão fixados após testes de 
 ## Implementação já presente na branch de desenvolvimento
 
 - `js/phase2System.js`: modelo de estado e regras-base testáveis isoladamente.
-- `js/phase2Game.js`: runtime jogável isolado, com movimento por teclado/toque, serras perseguidoras, zonas de carga elétrica, DASH, lasers com brechas, MERGE, HUD e Serra Gigante.
+- `js/phase2Game.js`: runtime jogável isolado, com movimento por teclado/toque, serras perseguidoras progressivas, zonas de carga elétrica, DASH, lasers com brechas em sequências progressivas, MERGE, HUD inspirado na Fase 1 e Serra Gigante circular.
+- MERGE mantém a esfera vermelha e o comportamento de cura de 25 HP, limitado ao máximo de 80 HP, concedendo +1000 pontos apenas quando efetivamente cura.
 - `index.html`: opção para iniciar a Fase 2 no menu desta versão de desenvolvimento.
 - A Fase 2 não é carregada pelo projeto público original; os arquivos do motor da Fase 1 não foram editados nesta branch.
 - Valores de gameplay no objeto `TUNING` de `phase2Game.js` são parâmetros iniciais de playtest, não balanceamento final aprovado.
@@ -52,7 +57,7 @@ Esses parâmetros devem ser configuráveis e só serão fixados após testes de 
 5. Lasers, avisos, brechas e área segura.
 6. MERGE adaptado e HUD.
 7. Serra Gigante e progressão.
-8. Testes de regressão da Fase 1, testes mobile/desktop e revisão visual.
+8. Testes automatizados isolados da Fase 2, regressão da Fase 1 sem alterar seu código, testes mobile/desktop e revisão visual.
 9. Pull request para avaliação. **Nunca fazer merge automático em `main`.**
 
 ## Critério de segurança
