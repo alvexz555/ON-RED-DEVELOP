@@ -84,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, frameStartX: 0, frameStartY: 0, knockbackTime: 0, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -185,6 +185,9 @@
     state.invuln = 1.2;
     state.x = innerWidth / 2;
     state.y = innerHeight / 2;
+    state.frameStartX = state.x;
+    state.frameStartY = state.y;
+    state.shieldHitsRemaining = 0;
     state.vx = 0;
     state.vy = 0;
     state.knockbackTime = 0;
@@ -484,7 +487,7 @@
       return "pingpong";
     }
 
-    const effects = ["gravity", "ghost", "invert", "freeze", "extraLives"];
+    const effects = ["gravity", "ghost", "invert", "freeze"];
     const chosen = effects[Math.floor(Math.random() * effects.length)];
     if (chosen === "gravity") {
       state.effects.gravity = TUNING.gravityDuration;
@@ -500,14 +503,6 @@
     } else if (chosen === "freeze") {
       state.effects.freeze = TUNING.freezeDuration;
       state.message = "TEMPO CONGELADO";
-    } else {
-      if (state.lives < TUNING.maxLives) {
-        state.lives += 1;
-        state.message = "+1 VIDA EXTRA";
-      } else {
-        state.energy = clamp(state.energy + 25, 0, TUNING.maxEnergy);
-        state.message = "LIMITE DE VIDAS · +25 ENERGIA";
-      }
     }
     state.messageTimer = 1.4;
     return chosen;
@@ -540,6 +535,15 @@
 
   function damage(amount, message = "IMPACTO", bypassInvulnerability = false) {
     if ((!bypassInvulnerability && state.invuln > 0) || state.over || state.victory || amount <= 0) return false;
+    if (state.shieldHitsRemaining > 0) {
+      state.shieldHitsRemaining -= 1;
+      state.invuln = 0.9;
+      state.message = state.shieldHitsRemaining > 0
+        ? "ESCUDO · " + state.shieldHitsRemaining + "/3 GOLPES"
+        : "ESCUDO DESTRUÍDO";
+      state.messageTimer = 0.9;
+      return true;
+    }
     state.hp = Math.max(0, state.hp - amount);
     state.invuln = 0.9;
     state.message = message;
@@ -585,7 +589,6 @@
     // O DASH cancela o empurrão recebido: não reutiliza a velocidade do knockback.
     const wasKnockedBack = state.knockbackTime > 0;
     state.knockbackTime = 0;
-    state.dashEffectRolled = false;
     if (wasKnockedBack) {
       state.vx = 0;
       state.vy = 0;
@@ -688,8 +691,9 @@
       state.sawSpawnTimer = 6;
     }
 
-    let sawKillsThisFrame = 0;
     for (const saw of state.saws) {
+      const sawStartX = saw.x;
+      const sawStartY = saw.y;
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
       if (saw.stun <= 0) {
@@ -700,15 +704,23 @@
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
-      if (circleHit(saw, saw.r, state, TUNING.playerRadius)) {
+
+      // Colisão varrida pela trajetória relativa completa do frame.
+      const relativeStartX = state.frameStartX - sawStartX;
+      const relativeStartY = state.frameStartY - sawStartY;
+      const relativeEndX = state.x - saw.x;
+      const relativeEndY = state.y - saw.y;
+      const hitRadius = saw.r + TUNING.playerRadius;
+      const sweptHit = segmentDistanceSquared(
+        0, 0, relativeStartX, relativeStartY, relativeEndX, relativeEndY
+      ) <= hitRadius * hitRadius;
+
+      if (sweptHit) {
         if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
-          state.score += 500;
-          state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
-          state.message = "SERRA DESTRUÍDA · +500";
+          state.message = "SERRA DESTRUÍDA";
           state.messageTimer = 0.8;
-          sawKillsThisFrame++;
         } else {
           if (state.invuln <= 0) applyKnockback(saw.x, saw.y, TUNING.sawKnockback);
           damage(TUNING.sawDamage, "SERRA · -20 HP");
@@ -732,18 +744,14 @@
       }
     }
 
-    // Uma única rolagem por evento de DASH, mesmo destruindo várias serras.
-    if (sawKillsThisFrame > 0 && !state.dashEffectRolled) {
-      state.dashEffectRolled = true;
-      activateRandomEffect();
-    }
     const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
     if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
       state.hp = TUNING.maxHP;
-      state.lives = TUNING.maxLives;
-      state.message = "ONDA CONCLUÍDA · HP E VIDAS RESTAURADOS";
-      state.messageTimer = 2.2;
+      if (state.lives < TUNING.maxLives) state.lives += 1;
+      state.shieldHitsRemaining = 3;
+      state.message = "ONDA CONCLUÍDA · +1 VIDA · HP RESTAURADO · ESCUDO 3 GOLPES";
+      state.messageTimer = 2.8;
     }
   }
 
@@ -852,6 +860,8 @@
     }
     if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
+    state.frameStartX = state.x;
+    state.frameStartY = state.y;
     if (state.dashTime <= 0 && state.knockbackTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
       state.vy = (iy / inputLength) * TUNING.playerSpeed;
@@ -1043,6 +1053,12 @@
     ctx.textAlign = "left";
     ctx.fillStyle = "#AAB4C3";
     ctx.fillText("ENERGIA " + Math.floor(state.energy) + "%", barX, barY + 35);
+    if (state.shieldHitsRemaining > 0) {
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#58BFFF";
+      ctx.fillText("ESCUDO " + state.shieldHitsRemaining + "/3", barX + barWidth, barY + 35);
+      ctx.textAlign = "left";
+    }
     ctx.fillStyle = "#303743";
     ctx.fillRect(barX, barY + 42, barWidth, 5);
     ctx.fillStyle = "#168BFF";
@@ -1169,12 +1185,19 @@
     ctx.beginPath();
     ctx.arc(state.x, state.y, TUNING.playerRadius, 0, Math.PI * 2);
     const colorRatio = clamp(state.energy / TUNING.maxEnergy, 0, 1);
-    ctx.fillStyle = "rgb(255," +
+    ctx.fillStyle = state.shieldHitsRemaining > 0 ? "#168BFF" : "rgb(255," +
       Math.round(107 + (255 - 107) * colorRatio) + "," +
       Math.round(112 + (255 - 112) * colorRatio) + ")";
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = state.dashTime > 0 ? 24 : 10;
+    ctx.shadowColor = state.shieldHitsRemaining > 0 ? "#58BFFF" : ctx.fillStyle;
+    ctx.shadowBlur = state.shieldHitsRemaining > 0 ? 22 : (state.dashTime > 0 ? 24 : 10);
     ctx.fill();
+    if (state.shieldHitsRemaining > 0) {
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, TUNING.playerRadius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(88,191,255,.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     ctx.shadowBlur = 0;
     if (state.invuln > 0 && Math.floor(state.time * 16) % 2 === 0) {
       ctx.beginPath();
