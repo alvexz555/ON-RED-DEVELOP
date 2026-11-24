@@ -1256,8 +1256,32 @@
     requestAnimationFrame(frame);
   }
 
+  function syncCanvasForPhaseTwo() {
+    // A Fase 1 usa uma escala lógica própria no mesmo contexto.
+    // A Fase 2 desenha em coordenadas da viewport, então restaura
+    // o backing store e o transform para ocupar a tela inteira.
+    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+
+    canvas.style.position = "fixed";
+    canvas.style.left = "0";
+    canvas.style.top = "0";
+    canvas.style.width = "100vw";
+    canvas.style.height = "100vh";
+    canvas.style.display = "block";
+
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
   function launch() {
     const startLoop = !state.active;
+    syncCanvasForPhaseTwo();
     reset();
     hideAllScreens();
     if (ui.mainMenu) ui.mainMenu.classList.add("hidden");
@@ -1382,6 +1406,7 @@
   });
 
   window.addEventListener("resize", () => {
+    if (state.active) syncCanvasForPhaseTwo();
     state.x = clamp(state.x || innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
     state.y = clamp(state.y || innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
     resetJoystick();
