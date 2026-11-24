@@ -84,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -584,6 +584,7 @@
 
     // O DASH do jogador neutraliza qualquer impulso de colisão recebido.
     state.knockbackTime = 0;
+    state.dashEffectRolled = false;
     const length = Math.hypot(state.vx, state.vy);
     if (length > 0) {
       state.vx = state.vx / length * 760;
@@ -727,7 +728,10 @@
     }
 
     // Uma única rolagem por evento de DASH, mesmo destruindo várias serras.
-    if (sawKillsThisFrame > 0) activateRandomEffect();
+    if (sawKillsThisFrame > 0 && !state.dashEffectRolled) {
+      state.dashEffectRolled = true;
+      activateRandomEffect();
+    }
     const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
     if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
