@@ -194,6 +194,7 @@
     state.boss = null;
     state.pointer = null;
     state.pointerId = null;
+    resetJoystick();
     state.message = "CARREGUE ENERGIA. SOBREVIVA.";
     state.messageTimer = 2.5;
     button.flash = 0;
@@ -257,6 +258,7 @@
   function triggerGameOver() {
     if (state.gameOverShown) return;
     state.gameOverShown = true;
+    resetJoystick();
     saveBestScore();
     updateReviveOffer();
     if (ui.pauseButton) ui.pauseButton.style.display = "none";
