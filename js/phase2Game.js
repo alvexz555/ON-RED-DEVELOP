@@ -223,12 +223,23 @@
     return chosen;
   }
 
+  function segmentDistanceSquared(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq > 0 ? clamp(((px - ax) * abx + (py - ay) * aby) / lengthSq, 0, 1) : 0;
+    const dx = px - (ax + abx * t), dy = py - (ay + aby * t);
+    return dx * dx + dy * dy;
+  }
+
   function updatePingPongs(dt) {
+    if (state.effects.freeze > 0) return;
     for (const ball of state.pingPongs) {
+      const oldX = ball.x, oldY = ball.y;
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.life -= dt;
-      if (circleHit(ball, ball.r, state, TUNING.playerRadius)) {
+      const hitRadius = ball.r + TUNING.playerRadius;
+      if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
         damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP");
         ball.life = 0;
       }
@@ -313,6 +324,7 @@
   }
 
   function updateLasers(dt) {
+    if (state.effects.freeze > 0) return;
     state.laserTimer -= dt;
     if (state.laserTimer <= 0) {
       spawnLaser();
@@ -344,6 +356,7 @@
   }
 
   function updateSaws(dt) {
+    if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
 
     if (!state.boss && state.saws.length === 0) {
