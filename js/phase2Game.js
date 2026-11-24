@@ -45,7 +45,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
-    sawSpawnTimer: 0, zoneTimer: 1, mergeTimer: 3,
+    sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
     message: "", messageTimer: 0, best: 0
   };
@@ -84,6 +84,7 @@
     state.lasers = [];
     state.laserTimer = 3.2;
     state.sawSpawnTimer = 0;
+    state.sawRestTimer = 0;
     state.zoneTimer = 1;
     state.mergeTimer = 3;
     state.boss = null;
@@ -142,10 +143,23 @@
   function spawnLaser() {
     const maxLasers = state.time >= 55 ? 3 : state.time >= 20 ? 2 : 1;
     if (state.lasers.length >= maxLasers) return;
-    const axis = Math.random() < 0.5 ? "h" : "v";
-    const at = rand(axis === "h" ? 80 : 70, axis === "h" ? innerHeight - 80 : innerWidth - 70);
+    const moving = Math.hypot(state.vx, state.vy) > 35;
+    const leadTime = 0.62;
+    const projectedX = clamp(state.x + (moving ? state.vx * leadTime : 0), 24, innerWidth - 24);
+    const projectedY = clamp(state.y + (moving ? state.vy * leadTime : 0), 24, innerHeight - 24);
+    // O feixe aparece à frente do deslocamento dominante do jogador.
+    const axis = moving
+      ? (Math.abs(state.vx) >= Math.abs(state.vy) ? "v" : "h")
+      : (Math.random() < 0.5 ? "h" : "v");
     const span = axis === "h" ? innerWidth : innerHeight;
-    const gapCenter = rand(Math.min(120, span * 0.35), Math.max(span - 120, span * 0.65));
+    const at = axis === "h"
+      ? clamp(projectedY, 70, innerHeight - 70)
+      : clamp(projectedX, 70, innerWidth - 70);
+    // A brecha fica deslocada da trajetória prevista, exigindo uma mudança de rota.
+    const safeOffset = Math.min(175, span * 0.22);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const projectedAlong = axis === "h" ? projectedX : projectedY;
+    const gapCenter = clamp(projectedAlong + safeOffset * side, 55, span - 55);
     state.lasers.push({
       axis, at, gapCenter, gap: TUNING.laserGap,
       phase: "warning", t: TUNING.laserWarning,
@@ -170,11 +184,18 @@
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
-        state.x = innerWidth / 2;
-        state.y = innerHeight / 2;
+        state.x = clamp(innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+        state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
         state.vx = 0;
         state.vy = 0;
+        state.pointer = null;
+        state.pointerId = null;
+        keys.clear();
+        state.dashTime = 0;
+        state.dashCharged = false;
+        state.dashCooldown = 0;
         state.energy = 0;
+        state.last = 0;
         state.message = "VIDA PERDIDA";
         state.messageTimer = 1.5;
       }
@@ -251,11 +272,23 @@
   }
 
   function updateSaws(dt) {
-    state.sawSpawnTimer -= dt;
     const desired = desiredSawCount();
+
+    if (!state.boss && state.saws.length === 0) {
+      if (state.sawRestTimer <= 0) state.sawRestTimer = 8;
+      state.sawRestTimer = Math.max(0, state.sawRestTimer - dt);
+      if (state.sawRestTimer === 0) {
+        for (let i = 0; i < desired; i++) spawnSaw();
+        state.sawSpawnTimer = 6;
+      }
+      return;
+    }
+
+    state.sawRestTimer = 0;
+    state.sawSpawnTimer -= dt;
     if (!state.boss && state.saws.length < desired && state.sawSpawnTimer <= 0) {
       spawnSaw();
-      state.sawSpawnTimer = 1.5;
+      state.sawSpawnTimer = 6;
     }
 
     for (const saw of state.saws) {
@@ -479,13 +512,6 @@
     }
     ctx.stroke();
     ctx.restore();
-    if (warning) {
-      ctx.fillStyle = "#58BFFF";
-      ctx.font = "bold 10px Arial";
-      ctx.textAlign = "center";
-      if (laser.axis === "h") ctx.fillText("BRECHA SEGURA", laser.gapCenter, laser.at - 12);
-      else ctx.fillText("BRECHA SEGURA", laser.at + 58, laser.gapCenter);
-    }
   }
 
   function drawHealthHUD() {
