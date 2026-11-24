@@ -12,7 +12,8 @@
 
   const TUNING = Object.freeze({
     maxHP: 80,
-    lives: 4,
+    startingLives: 4,
+    maxLives: 6,
     energyPerZone: 25,
     maxEnergy: 100,
     dashCost: 25,
@@ -34,15 +35,23 @@
     mergeInterval: 7,
     bossTriggerSeconds: 105,
     bossHP: 1200,
-    bossDashDamage: 200
+    bossDashDamage: 200,
+    gravityDuration: 5,
+    ghostDuration: 5,
+    inversionDuration: 3,
+    freezeDuration: 3,
+    pingPongDamage: 50,
+    pingPongSpeed: 2600
   });
 
   const keys = new Set();
   const button = { size: 64, margin: 28, x: 0, y: 0, flash: 0 };
   const state = {
     active: false, paused: false, over: false, victory: false,
-    time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.lives,
+    time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
+    effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
+    gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
@@ -68,8 +77,11 @@
     state.time = 0;
     state.score = 0;
     state.hp = TUNING.maxHP;
-    state.lives = TUNING.lives;
+    state.lives = TUNING.startingLives;
     state.energy = 0;
+    state.effects = { gravity: 0, ghost: 0, invert: 0, freeze: 0 };
+    state.gravityPoint = null;
+    state.pingPongs = [];
     state.dashCooldown = 0;
     state.dashTime = 0;
     state.dashCharged = false;
@@ -167,6 +179,64 @@
     });
   }
 
+  function activateRandomEffect() {
+    // 10% para o efeito negativo raro. Os outros 90% são divididos entre os cinco efeitos escolhidos.
+    const roll = Math.random();
+    if (roll < 0.10) {
+      const side = Math.floor(Math.random() * 4);
+      const targetX = state.x, targetY = state.y;
+      let x = 0, y = 0;
+      if (side === 0) { x = -18; y = rand(0, innerHeight); }
+      else if (side === 1) { x = innerWidth + 18; y = rand(0, innerHeight); }
+      else if (side === 2) { x = rand(0, innerWidth); y = -18; }
+      else { x = rand(0, innerWidth); y = innerHeight + 18; }
+      const dx = targetX - x, dy = targetY - y;
+      const length = Math.hypot(dx, dy) || 1;
+      state.pingPongs.push({ x, y, vx: dx / length * TUNING.pingPongSpeed,
+        vy: dy / length * TUNING.pingPongSpeed, r: 9, life: 2.5 });
+      state.message = "PING PONG FANTASMA · PERIGO";
+      state.messageTimer = 1.4;
+      return "pingpong";
+    }
+
+    const effects = ["gravity", "ghost", "invert", "freeze", "extraLives"];
+    const chosen = effects[Math.floor(Math.random() * effects.length)];
+    if (chosen === "gravity") {
+      state.effects.gravity = TUNING.gravityDuration;
+      state.gravityPoint = { x: rand(innerWidth * 0.25, innerWidth * 0.75),
+        y: rand(innerHeight * 0.25, innerHeight * 0.75) };
+      state.message = "GRAVIDADE · SERRAS ATRAÍDAS";
+    } else if (chosen === "ghost") {
+      state.effects.ghost = TUNING.ghostDuration;
+      state.message = "FANTASMA · SERRAS NÃO CAUSAM DANO";
+    } else if (chosen === "invert") {
+      state.effects.invert = TUNING.inversionDuration;
+      state.message = "INVERSÃO · CONTROLES ALTERADOS";
+    } else if (chosen === "freeze") {
+      state.effects.freeze = TUNING.freezeDuration;
+      state.message = "TEMPO CONGELADO";
+    } else {
+      state.lives = Math.min(TUNING.maxLives, state.lives + 2);
+      state.message = "+2 VIDAS";
+    }
+    state.messageTimer = 1.4;
+    return chosen;
+  }
+
+  function updatePingPongs(dt) {
+    for (const ball of state.pingPongs) {
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      ball.life -= dt;
+      if (circleHit(ball, ball.r, state, TUNING.playerRadius)) {
+        damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP");
+        ball.life = 0;
+      }
+    }
+    state.pingPongs = state.pingPongs.filter(ball => ball.life > 0 &&
+      ball.x > -40 && ball.x < innerWidth + 40 && ball.y > -40 && ball.y < innerHeight + 40);
+  }
+
   function damage(amount, message = "IMPACTO") {
     if (state.invuln > 0 || state.over || state.victory || amount <= 0) return false;
     state.hp = Math.max(0, state.hp - amount);
@@ -249,6 +319,8 @@
       state.laserTimer = state.time >= 55 ? 1.15 : state.time >= 20 ? 2.1 : TUNING.laserInterval;
     }
 
+    if (state.effects.freeze > 0) return;
+
     for (const laser of state.lasers) {
       laser.t -= dt;
       if (laser.t <= 0 && laser.phase === "warning") {
@@ -295,19 +367,22 @@
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
       if (saw.stun <= 0) {
-        const dx = state.x - saw.x;
-        const dy = state.y - saw.y;
+        const target = state.effects.gravity > 0 && state.gravityPoint ? state.gravityPoint : state;
+        const dx = target.x - saw.x;
+        const dy = target.y - saw.y;
         const length = Math.hypot(dx, dy) || 1;
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
       if (circleHit(saw, saw.r, state, TUNING.playerRadius)) {
+        if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
           state.score += 500;
           state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
           state.message = "SERRA DESTRUÍDA · +500";
           state.messageTimer = 0.8;
+          activateRandomEffect();
         } else {
           damage(TUNING.sawDamage, "SERRA · -20 HP");
         }
@@ -330,7 +405,14 @@
       }
     }
 
+    const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
+    if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
+      state.hp = TUNING.maxHP;
+      state.lives = TUNING.maxLives;
+      state.message = "ONDA CONCLUÍDA · HP E VIDAS RESTAURADOS";
+      state.messageTimer = 2.2;
+    }
   }
 
   function updateBoss(dt) {
@@ -374,6 +456,8 @@
     state.dashTime = Math.max(0, state.dashTime - dt);
     button.flash = Math.max(0, button.flash - dt);
     state.messageTimer = Math.max(0, state.messageTimer - dt);
+    for (const key of Object.keys(state.effects)) state.effects[key] = Math.max(0, state.effects[key] - dt);
+    if (state.effects.gravity <= 0) state.gravityPoint = null;
 
     let ix = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
              (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
@@ -383,6 +467,7 @@
       ix = clamp((state.pointer.x - state.pointer.ox) / 42, -1, 1);
       iy = clamp((state.pointer.y - state.pointer.oy) / 42, -1, 1);
     }
+    if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
     if (state.dashTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
@@ -436,10 +521,11 @@
     }
     state.merges = state.merges.filter(orb => orb.life > 0);
 
+    updatePingPongs(dt);
     updateSaws(dt);
     updateLasers(dt);
     if (!state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
-    updateBoss(dt);
+    if (state.effects.freeze <= 0) updateBoss(dt);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
@@ -519,7 +605,7 @@
     const y = 64;
     const lifeRadius = 7;
     const spacing = 23;
-    for (let i = 0; i < TUNING.lives; i++) {
+    for (let i = 0; i < TUNING.maxLives; i++) {
       const lifeX = x + lifeRadius + i * spacing;
       ctx.beginPath();
       ctx.arc(lifeX, y, lifeRadius, 0, Math.PI * 2);
@@ -635,6 +721,22 @@
 
     state.merges.forEach(drawMerge);
     state.lasers.forEach(drawLaser);
+    for (const ball of state.pingPongs) {
+      ctx.save();
+      ctx.strokeStyle = "#FF3948";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ball.x - ball.vx * 0.018, ball.y - ball.vy * 0.018);
+      ctx.lineTo(ball.x, ball.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.shadowColor = "#FF3948";
+      ctx.shadowBlur = 18;
+      ctx.fill();
+      ctx.restore();
+    }
     state.saws.forEach(saw => drawSawShape(saw.x, saw.y, saw.r, saw.angle));
 
     if (state.boss) {
@@ -787,6 +889,8 @@
     getState: () => ({
       ...state,
       saws: state.saws.length,
+      effects: { ...state.effects },
+      pingPongs: state.pingPongs.length,
       zones: state.zones.length,
       merges: state.merges.length,
       lasers: state.lasers.length
