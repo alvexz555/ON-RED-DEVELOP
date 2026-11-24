@@ -1,6 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { beforeEach } = require("node:test");
 const phase2 = require("../js/phase2System.js");
+
+beforeEach(() => phase2.reset());
 
 test("Fase 2 começa com 80 HP, quatro vidas e energia zerada", () => {
     const state = phase2.reset();
