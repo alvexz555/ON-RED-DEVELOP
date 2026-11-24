@@ -582,9 +582,14 @@
     state.dashCooldown = TUNING.dashCooldown;
     button.flash = 0.25;
 
-    // O DASH do jogador neutraliza qualquer impulso de colisão recebido.
+    // O DASH cancela o empurrão recebido: não reutiliza a velocidade do knockback.
+    const wasKnockedBack = state.knockbackTime > 0;
     state.knockbackTime = 0;
     state.dashEffectRolled = false;
+    if (wasKnockedBack) {
+      state.vx = 0;
+      state.vy = 0;
+    }
     const length = Math.hypot(state.vx, state.vy);
     if (length > 0) {
       state.vx = state.vx / length * 760;
