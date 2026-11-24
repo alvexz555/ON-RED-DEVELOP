@@ -46,6 +46,26 @@
 
   const keys = new Set();
   const button = { size: 64, margin: 28, x: 0, y: 0, flash: 0 };
+  const ui = {
+    mainMenu: document.getElementById("mainMenu"),
+    pauseButton: document.getElementById("pauseButton"),
+    pauseScreen: document.getElementById("pauseScreen"),
+    resumeButton: document.getElementById("resumeButton"),
+    pauseRestartButton: document.getElementById("pauseRestartButton"),
+    pauseMenuButton: document.getElementById("pauseMenuButton"),
+    gameOverScreen: document.getElementById("gameOverScreen"),
+    finalScore: document.getElementById("finalScore"),
+    bestScoreGameOver: document.getElementById("bestScoreGameOver"),
+    reviveButton: document.getElementById("reviveButton"),
+    reviveUnavailable: document.getElementById("reviveUnavailable"),
+    retryButton: document.getElementById("retryButton"),
+    gameOverMenuButton: document.getElementById("gameOverMenuButton"),
+    victoryScreen: document.getElementById("victoryScreen"),
+    victoryFinalScore: document.getElementById("victoryFinalScore"),
+    victoryBestScore: document.getElementById("victoryBestScore"),
+    victoryRetryButton: document.getElementById("victoryRetryButton"),
+    victoryMenuButton: document.getElementById("victoryMenuButton")
+  };
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
@@ -56,6 +76,8 @@
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
+    revivesUsed: 0, bossDefeated: false, postBoss: false,
+    gameOverShown: false, victoryShown: false,
     message: "", messageTimer: 0, best: 0
   };
 
@@ -74,6 +96,11 @@
     state.paused = false;
     state.over = false;
     state.victory = false;
+    state.revivesUsed = 0;
+    state.bossDefeated = false;
+    state.postBoss = false;
+    state.gameOverShown = false;
+    state.victoryShown = false;
     state.time = 0;
     state.score = 0;
     state.hp = TUNING.maxHP;
@@ -113,6 +140,194 @@
       state.best = 0;
     }
     state.last = 0;
+    hideScreen(ui.pauseScreen);
+    hideScreen(ui.gameOverScreen);
+    hideScreen(ui.victoryScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    updateReviveOffer();
+  }
+
+  function hideScreen(element) {
+    if (!element) return;
+    element.classList.remove("active");
+    element.setAttribute("aria-hidden", "true");
+  }
+
+  function showScreen(element) {
+    if (!element) return;
+    element.classList.add("active");
+    element.setAttribute("aria-hidden", "false");
+  }
+
+  function hideAllScreens() {
+    hideScreen(ui.pauseScreen);
+    hideScreen(ui.gameOverScreen);
+    hideScreen(ui.victoryScreen);
+  }
+
+  function saveBestScore() {
+    const score = Math.floor(state.score);
+    if (score <= state.best) return;
+    state.best = score;
+    try { localStorage.setItem("onRedPhase2Best", String(score)); } catch (_) {}
+  }
+
+  function updateReviveOffer() {
+    const available = state.revivesUsed < 1 ||
+      (state.bossDefeated && state.revivesUsed < 2);
+    if (ui.reviveButton) {
+      ui.reviveButton.hidden = !available;
+      ui.reviveButton.textContent = state.revivesUsed === 0
+        ? "REVIVER GRATUITAMENTE"
+        : "REVIVER · 2ª CHANCE";
+    }
+    if (ui.reviveUnavailable) {
+      ui.reviveUnavailable.hidden = available;
+      ui.reviveUnavailable.textContent = state.bossDefeated
+        ? "AS DUAS CONTINUAÇÕES FORAM UTILIZADAS · FIM DE JOGO"
+        : "CONTINUAÇÃO UTILIZADA · VENÇA O BOSS PARA DESBLOQUEAR A SEGUNDA";
+    }
+  }
+
+  function triggerGameOver() {
+    if (state.gameOverShown) return;
+    state.gameOverShown = true;
+    saveBestScore();
+    updateReviveOffer();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    hideScreen(ui.pauseScreen);
+    if (ui.finalScore) ui.finalScore.textContent = String(Math.floor(state.score)).padStart(6, "0");
+    if (ui.bestScoreGameOver) ui.bestScoreGameOver.textContent = String(state.best).padStart(6, "0");
+    showScreen(ui.gameOverScreen);
+    if (window.ONREDAudio) {
+      window.ONREDAudio.stopMusic();
+      window.ONREDAudio.play("gameOver");
+    }
+    if (window.ONREDPlaygama &&
+        typeof window.ONREDPlaygama.showInterstitialAtNaturalBreak === "function") {
+      window.ONREDPlaygama.showInterstitialAtNaturalBreak();
+    }
+  }
+
+  function triggerVictory() {
+    if (state.victoryShown) return;
+    state.victoryShown = true;
+    saveBestScore();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    hideScreen(ui.pauseScreen);
+    if (ui.victoryFinalScore) ui.victoryFinalScore.textContent = String(Math.floor(state.score)).padStart(6, "0");
+    if (ui.victoryBestScore) ui.victoryBestScore.textContent = String(state.best).padStart(6, "0");
+    const label = ui.victoryScreen?.querySelector(".game-over-label");
+    const title = ui.victoryScreen?.querySelector(".victory-title");
+    const copy = ui.victoryScreen?.querySelector(".victory-copy strong");
+    if (label) label.textContent = "FASE 2 CONCLUÍDA";
+    if (title) title.textContent = "VOCÊ DERROTOU A SERRA GIGANTE.";
+    if (copy) copy.textContent = "FASE 3 DESBLOQUEADA · CONTINUE A SOBREVIVÊNCIA";
+    showScreen(ui.victoryScreen);
+    if (window.ONREDAudio) {
+      window.ONREDAudio.stopMusic();
+      window.ONREDAudio.play("victory");
+    }
+  }
+
+  function pauseGame() {
+    if (!state.active || state.paused || state.over || state.victory) return false;
+    state.paused = true;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    state.last = 0;
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    showScreen(ui.pauseScreen);
+    if (window.ONREDAudio && typeof window.ONREDAudio.pauseMusic === "function") {
+      window.ONREDAudio.pauseMusic();
+    }
+    return true;
+  }
+
+  function resumeGame() {
+    if (!state.active || !state.paused) return false;
+    state.paused = false;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    state.last = 0;
+    hideScreen(ui.pauseScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio && typeof window.ONREDAudio.resumeMusic === "function") {
+      window.ONREDAudio.resumeMusic();
+    }
+    return true;
+  }
+
+  function reviveGame() {
+    const available = state.revivesUsed < 1 ||
+      (state.bossDefeated && state.revivesUsed < 2);
+    if (!state.active || !state.over || !available) return false;
+    state.revivesUsed += 1;
+    state.over = false;
+    state.gameOverShown = false;
+    state.paused = false;
+    state.lives = 1;
+    state.hp = Math.min(50, TUNING.maxHP);
+    state.invuln = 2;
+    state.x = clamp(innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+    state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+    state.vx = 0;
+    state.vy = 0;
+    state.pointer = null;
+    state.pointerId = null;
+    state.dashTime = 0;
+    keys.clear();
+    state.last = 0;
+    updateReviveOffer();
+    hideScreen(ui.gameOverScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio) {
+      window.ONREDAudio.play("revive");
+      window.ONREDAudio.playMusic(state.boss && state.bossDefeated ? "boss" : "gameplay");
+    }
+    return true;
+  }
+
+  function continueAfterBoss() {
+    if (!state.active || !state.victory || !state.bossDefeated) return false;
+    state.victory = false;
+    state.victoryShown = false;
+    state.postBoss = true;
+    state.boss = null;
+    state.saws = [];
+    state.lasers = [];
+    state.pingPongs = [];
+    state.sawRestTimer = 4;
+    state.sawSpawnTimer = 0;
+    state.laserTimer = 2.5;
+    state.invuln = 1.5;
+    state.last = 0;
+    hideScreen(ui.victoryScreen);
+    updateReviveOffer();
+    if (window.ONREDAudio) window.ONREDAudio.playMusic("gameplay");
+    return true;
+  }
+
+  function exit() {
+    state.active = false;
+    state.paused = false;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    hideAllScreens();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    if (window.ONREDAudio && typeof window.ONREDAudio.stopMusic === "function") {
+      window.ONREDAudio.stopMusic();
+    }
+    if (ui.mainMenu) ui.mainMenu.classList.remove("hidden");
   }
 
   function spawnSaw() {
@@ -259,9 +474,7 @@
       if (state.lives <= 0) {
         state.over = true;
         state.message = "GAME OVER";
-        try {
-          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
-        } catch (_) {}
+        triggerGameOver();
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
@@ -450,12 +663,15 @@
       state.message = "DASH ELÉTRICO · -200 BOSS HP";
       state.messageTimer = 1.1;
       if (boss.hp <= 0) {
+        state.bossDefeated = true;
         state.victory = true;
         state.message = "FASE 2 CONCLUÍDA";
-        try {
-          localStorage.setItem("onRedPhase3Unlocked", "true");
-          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
-        } catch (_) {}
+        state.messageTimer = 3;
+        state.boss = null;
+        state.saws = [];
+        state.lasers = [];
+        try { localStorage.setItem("onRedPhase3Unlocked", "true"); } catch (_) {}
+        triggerVictory();
       }
     }
   }
@@ -537,7 +753,7 @@
     updatePingPongs(dt);
     updateSaws(dt);
     updateLasers(dt);
-    if (!state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
+    if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
     if (state.effects.freeze <= 0) updateBoss(dt);
   }
 
@@ -824,33 +1040,77 @@
   }
 
   function launch() {
+    const startLoop = !state.active;
     reset();
-    document.getElementById("mainMenu")?.classList.add("hidden");
-    requestAnimationFrame(frame);
-  }
-
-  function exit() {
-    state.active = false;
-    state.paused = false;
-    keys.clear();
-    state.pointer = null;
-    document.getElementById("mainMenu")?.classList.remove("hidden");
+    hideAllScreens();
+    if (ui.mainMenu) ui.mainMenu.classList.add("hidden");
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio) window.ONREDAudio.playMusic("gameplay");
+    if (startLoop) requestAnimationFrame(frame);
   }
 
   document.getElementById("phaseTwoButton")?.addEventListener("click", launch);
 
+  if (ui.pauseButton) {
+    ui.pauseButton.addEventListener("click", event => {
+      if (!state.active) return;
+      event.preventDefault();
+      pauseGame();
+    });
+  }
+  if (ui.resumeButton) ui.resumeButton.addEventListener("click", resumeGame);
+  if (ui.pauseRestartButton) ui.pauseRestartButton.addEventListener("click", launch);
+  if (ui.pauseMenuButton) ui.pauseMenuButton.addEventListener("click", exit);
+  if (ui.reviveButton) ui.reviveButton.addEventListener("click", reviveGame);
+  if (ui.retryButton) ui.retryButton.addEventListener("click", launch);
+  if (ui.gameOverMenuButton) ui.gameOverMenuButton.addEventListener("click", exit);
+  if (ui.victoryRetryButton) ui.victoryRetryButton.addEventListener("click", continueAfterBoss);
+  if (ui.victoryMenuButton) ui.victoryMenuButton.addEventListener("click", exit);
+
+  // O botão é compartilhado com a Fase 1. A checagem por coordenada
+  // mantém o comportamento correto mesmo quando o canvas captura outro toque.
+  document.addEventListener("pointerdown", event => {
+    if (!state.active || state.paused || state.over || state.victory || !ui.pauseButton) return;
+    const rect = ui.pauseButton.getBoundingClientRect();
+    const x = event.clientX, y = event.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    pauseGame();
+  }, true);
+
+  // Captura antes do listener global da Fase 1, sem alterar o runtime dela.
   window.addEventListener("keydown", event => {
     if (!state.active) return;
+    if (event.code === "Escape" || event.code === "KeyP") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (state.over || state.victory) {
+        if (event.code === "Escape") exit();
+      } else if (state.paused) {
+        resumeGame();
+      } else {
+        pauseGame();
+      }
+      return;
+    }
+    if (state.paused || state.over || state.victory) {
+      if (event.code === "Enter" && state.over) launch();
+      else if (event.code === "Enter" && state.victory) continueAfterBoss();
+      return;
+    }
     keys.add(event.code);
     if (event.code === "ShiftLeft" || event.code === "ShiftRight") startDash();
-    if (event.code === "Escape") {
-      event.preventDefault();
-      if (state.over || state.victory) exit();
-      else state.paused = !state.paused;
-    }
-    if ((state.over || state.victory) && event.code === "Enter") launch();
-  });
+  }, true);
   window.addEventListener("keyup", event => keys.delete(event.code));
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.active && !state.paused && !state.over && !state.victory) {
+      pauseGame();
+    }
+  });
 
   canvas.addEventListener("pointerdown", event => {
     if (!state.active) return;
@@ -902,6 +1162,9 @@
     getState: () => ({
       ...state,
       saws: state.saws.length,
+      revivesUsed: state.revivesUsed,
+      bossDefeated: state.bossDefeated,
+      postBoss: state.postBoss,
       effects: { ...state.effects },
       pingPongs: state.pingPongs.length,
       zones: state.zones.length,
