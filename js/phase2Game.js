@@ -1,186 +1,769 @@
 /* ON RED · FASE 2
- * Runtime isolado. Não altera o motor nem os sistemas da Fase 1.
- * Os valores em TUNING são parâmetros iniciais de playtest.
+ * Runtime isolado para playtest.
+ * Reutiliza padrões visuais da Fase 1, com regras próprias da Fase 2.
+ * REGRA ZERO: nenhum arquivo ou sistema da Fase 1 é alterado.
  */
 (() => {
   "use strict";
+
   const canvas = document.getElementById("gameCanvas");
   if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext("2d");
+
   const TUNING = Object.freeze({
-    maxHP: 80, lives: 4, energyPerZone: 25, maxEnergy: 100,
-    dashCost: 25, dashDuration: 0.22, dashCooldown: 1.15,
-    playerSpeed: 245, playerRadius: 12, sawCount: 4,
-    sawSpeed: 65, sawDamage: 20, sawRadius: 19,
-    laserWarning: 1.15, laserActive: 0.72, laserInterval: 6.5,
-    mergeHeal: 25, mergeScore: 1000, mergeInterval: 7,
-    bossTriggerSeconds: 105, bossHP: 1200, bossDashDamage: 180
+    maxHP: 80,
+    lives: 4,
+    energyPerZone: 25,
+    maxEnergy: 100,
+    dashCost: 25,
+    dashDuration: 0.22,
+    dashCooldown: 1.15,
+    playerSpeed: 245,
+    playerRadius: 12,
+    initialSaws: 6,
+    maxSaws: 10,
+    sawRadius: 22,
+    sawDamage: 20,
+    laserWarning: 0.95,
+    laserActive: 0.78,
+    laserInterval: 4.35,
+    laserDamage: 20,
+    laserGap: 100,
+    mergeHeal: 25,
+    mergeScore: 1000,
+    mergeInterval: 7,
+    bossTriggerSeconds: 105,
+    bossHP: 1200,
+    bossDashDamage: 200
   });
+
   const keys = new Set();
+  const button = { size: 64, margin: 28, x: 0, y: 0, flash: 0 };
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.lives,
-    energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, invuln: 0,
-    x: 0, y: 0, vx: 0, vy: 0, last: 0,
-    saws: [], zones: [], merges: [], laser: null,
-    laserTimer: 2.5, zoneTimer: 1, mergeTimer: 3,
+    energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, last: 0,
+    saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
+    sawSpawnTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
     message: "", messageTimer: 0, best: 0
   };
-  const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
-  const rand = (a,b) => a + Math.random()*(b-a);
-  const dist = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
-  const arena = () => ({ w: canvas.width, h: canvas.height });
-  function resize() {
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(innerWidth*dpr);
-    canvas.height = Math.floor(innerHeight*dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    state.x = clamp(state.x || innerWidth/2,20,innerWidth-20);
-    state.y = clamp(state.y || innerHeight/2,20,innerHeight-20);
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const circleHit = (a, ar, b, br) => dist(a, b) <= ar + br;
+
+  function updateButtonPosition() {
+    button.x = innerWidth - button.margin - button.size;
+    button.y = innerHeight - button.margin - button.size;
   }
+
   function reset() {
-    state.active=true; state.paused=false; state.over=false; state.victory=false;
-    state.time=0; state.score=0; state.hp=TUNING.maxHP; state.lives=TUNING.lives;
-    state.energy=0; state.dashCooldown=0; state.dashTime=0; state.dashCharged=false; state.invuln=1.2;
-    state.x=innerWidth/2; state.y=innerHeight/2; state.vx=0; state.vy=0;
-    state.saws=[]; state.zones=[]; state.merges=[]; state.laser=null;
-    state.laserTimer=2.5; state.zoneTimer=1; state.mergeTimer=3; state.boss=null;
-    state.message="CARREGUE ENERGIA. SOBREVIVA."; state.messageTimer=2.5;
-    for(let i=0;i<TUNING.sawCount;i++) spawnSaw();
-    state.last=0;
-    try { state.best=Number(localStorage.getItem("onRedPhase2Best")||0)||0; } catch(e) { state.best=0; }
+    state.active = true;
+    state.paused = false;
+    state.over = false;
+    state.victory = false;
+    state.time = 0;
+    state.score = 0;
+    state.hp = TUNING.maxHP;
+    state.lives = TUNING.lives;
+    state.energy = 0;
+    state.dashCooldown = 0;
+    state.dashTime = 0;
+    state.dashCharged = false;
+    state.invuln = 1.2;
+    state.x = innerWidth / 2;
+    state.y = innerHeight / 2;
+    state.vx = 0;
+    state.vy = 0;
+    state.saws = [];
+    state.zones = [];
+    state.merges = [];
+    state.lasers = [];
+    state.laserTimer = 3.2;
+    state.sawSpawnTimer = 0;
+    state.zoneTimer = 1;
+    state.mergeTimer = 3;
+    state.boss = null;
+    state.pointer = null;
+    state.pointerId = null;
+    state.message = "CARREGUE ENERGIA. SOBREVIVA.";
+    state.messageTimer = 2.5;
+    button.flash = 0;
+    updateButtonPosition();
+    for (let i = 0; i < TUNING.initialSaws; i++) spawnSaw();
+    try {
+      state.best = Number(localStorage.getItem("onRedPhase2Best") || 0) || 0;
+    } catch (_) {
+      state.best = 0;
+    }
+    state.last = 0;
   }
+
   function spawnSaw() {
-    const side=Math.floor(Math.random()*4), pad=28;
-    const x=side===0?pad:side===1?innerWidth-pad:rand(pad,innerWidth-pad);
-    const y=side===2?pad:side===3?innerHeight-pad:rand(pad,innerHeight-pad);
-    state.saws.push({x,y,r:TUNING.sawRadius,angle:rand(0,6.28),hp:1,stun:0});
+    const side = Math.floor(Math.random() * 4);
+    const pad = TUNING.sawRadius + 8;
+    const x = side === 0 ? pad : side === 1 ? innerWidth - pad : rand(pad, innerWidth - pad);
+    const y = side === 2 ? pad : side === 3 ? innerHeight - pad : rand(pad, innerHeight - pad);
+    state.saws.push({
+      x, y, r: TUNING.sawRadius + rand(-2, 3),
+      angle: rand(0, Math.PI * 2), speed: rand(58, 86), hp: 1, stun: 0
+    });
   }
+
+  function desiredSawCount() {
+    if (state.time >= 48) return TUNING.maxSaws;
+    if (state.time >= 22) return 8;
+    return TUNING.initialSaws;
+  }
+
   function spawnZone() {
-    state.zones.push({x:rand(45,innerWidth-45),y:rand(80,innerHeight-65),r:22,life:9});
-    if(state.zones.length>3) state.zones.shift();
+    const margin = 48;
+    state.zones.push({
+      x: rand(margin, Math.max(margin, innerWidth - margin)),
+      y: rand(85, Math.max(85, innerHeight - 75)),
+      r: 22, life: 10, pulse: rand(0, 6.28)
+    });
+    if (state.zones.length > 4) state.zones.shift();
   }
+
   function spawnMerge() {
-    state.merges.push({x:rand(40,innerWidth-40),y:rand(75,innerHeight-50),r:10,life:12});
-    if(state.merges.length>3) state.merges.shift();
+    const margin = 45;
+    state.merges.push({
+      x: rand(margin, Math.max(margin, innerWidth - margin)),
+      y: rand(80, Math.max(80, innerHeight - 55)),
+      r: 9, life: 13, pulse: rand(0, 6.28)
+    });
+    if (state.merges.length > 3) state.merges.shift();
   }
-  function damage(amount) {
-    if(state.invuln>0 || state.over || state.victory) return;
-    state.hp=Math.max(0,state.hp-amount); state.invuln=0.9;
-    if(state.hp===0) {
-      state.lives--;
-      if(state.lives<=0) { state.over=true; state.message="GAME OVER"; }
-      else { state.hp=TUNING.maxHP; state.invuln=1.8; state.x=innerWidth/2; state.y=innerHeight/2; state.message="VIDA PERDIDA"; state.messageTimer=1.5; }
+
+  function spawnLaser() {
+    const maxLasers = state.time >= 55 ? 3 : state.time >= 20 ? 2 : 1;
+    if (state.lasers.length >= maxLasers) return;
+    const axis = Math.random() < 0.5 ? "h" : "v";
+    const at = rand(axis === "h" ? 80 : 70, axis === "h" ? innerHeight - 80 : innerWidth - 70);
+    const span = axis === "h" ? innerWidth : innerHeight;
+    const gapCenter = rand(Math.min(120, span * 0.35), Math.max(span - 120, span * 0.65));
+    state.lasers.push({
+      axis, at, gapCenter, gap: TUNING.laserGap,
+      phase: "warning", t: TUNING.laserWarning,
+      id: Math.random().toString(36).slice(2)
+    });
+  }
+
+  function damage(amount, message = "IMPACTO") {
+    if (state.invuln > 0 || state.over || state.victory || amount <= 0) return false;
+    state.hp = Math.max(0, state.hp - amount);
+    state.invuln = 0.9;
+    state.message = message;
+    state.messageTimer = 0.65;
+    if (state.hp <= 0) {
+      state.lives = Math.max(0, state.lives - 1);
+      if (state.lives <= 0) {
+        state.over = true;
+        state.message = "GAME OVER";
+        try {
+          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
+        } catch (_) {}
+      } else {
+        state.hp = TUNING.maxHP;
+        state.invuln = 1.8;
+        state.x = innerWidth / 2;
+        state.y = innerHeight / 2;
+        state.vx = 0;
+        state.vy = 0;
+        state.energy = 0;
+        state.message = "VIDA PERDIDA";
+        state.messageTimer = 1.5;
+      }
     }
+    return true;
   }
+
   function startDash() {
-    if(!state.active || state.paused || state.over || state.victory || state.dashCooldown>0 || state.energy<TUNING.dashCost) return;
-    state.dashCharged=state.energy>=100; state.energy-=TUNING.dashCost; state.dashTime=TUNING.dashDuration; state.dashCooldown=TUNING.dashCooldown;
-    const len=Math.hypot(state.vx,state.vy);
-    if(len>0){state.vx=state.vx/len*760;state.vy=state.vy/len*760;}
-    else {state.vx=0;state.vy=-760;}
-    state.invuln=Math.max(state.invuln, TUNING.dashDuration+0.08);
+    if (!state.active || state.paused || state.over || state.victory ||
+        state.dashCooldown > 0 || state.energy < TUNING.dashCost) return false;
+
+    state.dashCharged = state.energy >= TUNING.maxEnergy;
+    state.energy = Math.max(0, state.energy - TUNING.dashCost);
+    state.dashTime = TUNING.dashDuration;
+    state.dashCooldown = TUNING.dashCooldown;
+    button.flash = 0.25;
+
+    const length = Math.hypot(state.vx, state.vy);
+    if (length > 0) {
+      state.vx = state.vx / length * 760;
+      state.vy = state.vy / length * 760;
+    } else {
+      state.vx = 0;
+      state.vy = -760;
+    }
+    state.invuln = Math.max(state.invuln, TUNING.dashDuration + 0.08);
+    return true;
   }
+
   function beginBoss() {
-    if(state.boss) return;
-    state.boss={x:innerWidth/2,y:Math.max(100,innerHeight*0.25),r:58,hp:TUNING.bossHP,maxHP:TUNING.bossHP,angle:0};
-    state.saws=[]; state.message="SERRA GIGANTE · 100% DE ENERGIA PARA ATACAR"; state.messageTimer=4;
+    if (state.boss) return;
+    state.boss = {
+      x: innerWidth / 2,
+      y: Math.max(105, innerHeight * 0.24),
+      r: 76,
+      hp: TUNING.bossHP,
+      maxHP: TUNING.bossHP,
+      angle: 0,
+      speed: 19
+    };
+    state.saws = [];
+    state.lasers = [];
+    state.message = "SERRA GIGANTE · DASH COM 100% DE ENERGIA";
+    state.messageTimer = 4;
   }
+
+  function updateLasers(dt) {
+    state.laserTimer -= dt;
+    if (state.laserTimer <= 0) {
+      spawnLaser();
+      state.laserTimer = TUNING.laserInterval;
+    }
+
+    for (const laser of state.lasers) {
+      laser.t -= dt;
+      if (laser.t <= 0 && laser.phase === "warning") {
+        laser.phase = "active";
+        laser.t = TUNING.laserActive;
+      }
+    }
+    state.lasers = state.lasers.filter(laser => laser.t > 0);
+
+    for (const laser of state.lasers) {
+      if (laser.phase !== "active") continue;
+      const along = laser.axis === "h" ? state.x : state.y;
+      const across = laser.axis === "h" ? state.y : state.x;
+      const inSafeGap = Math.abs(along - laser.gapCenter) <= laser.gap / 2 + TUNING.playerRadius;
+      const onBeam = Math.abs(across - laser.at) <= 9 + TUNING.playerRadius;
+      if (onBeam && !inSafeGap) {
+        damage(TUNING.laserDamage, "LASER · -20 HP");
+        break;
+      }
+    }
+  }
+
+  function updateSaws(dt) {
+    state.sawSpawnTimer -= dt;
+    const desired = desiredSawCount();
+    if (!state.boss && state.saws.length < desired && state.sawSpawnTimer <= 0) {
+      spawnSaw();
+      state.sawSpawnTimer = 1.5;
+    }
+
+    for (const saw of state.saws) {
+      saw.angle += dt * 5.2;
+      saw.stun = Math.max(0, saw.stun - dt);
+      if (saw.stun <= 0) {
+        const dx = state.x - saw.x;
+        const dy = state.y - saw.y;
+        const length = Math.hypot(dx, dy) || 1;
+        saw.x += dx / length * saw.speed * dt;
+        saw.y += dy / length * saw.speed * dt;
+      }
+      if (circleHit(saw, saw.r, state, TUNING.playerRadius)) {
+        if (state.dashTime > 0) {
+          saw.hp = 0;
+          state.score += 500;
+          state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
+          state.message = "SERRA DESTRUÍDA · +500";
+          state.messageTimer = 0.8;
+        } else {
+          damage(TUNING.sawDamage, "SERRA · -20 HP");
+        }
+      }
+    }
+
+    // Separação simples para evitar que as dez serras virem uma única pilha.
+    for (let i = 0; i < state.saws.length; i++) {
+      for (let j = i + 1; j < state.saws.length; j++) {
+        const a = state.saws[i], b = state.saws[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const length = Math.hypot(dx, dy) || 0.001;
+        const min = a.r + b.r + 5;
+        if (length < min) {
+          const push = (min - length) * 0.5;
+          const nx = dx / length, ny = dy / length;
+          a.x -= nx * push; a.y -= ny * push;
+          b.x += nx * push; b.y += ny * push;
+        }
+      }
+    }
+
+    state.saws = state.saws.filter(saw => saw.hp > 0);
+  }
+
+  function updateBoss(dt) {
+    if (!state.boss) return;
+    const boss = state.boss;
+    boss.angle += dt * 1.15;
+    const dx = state.x - boss.x;
+    const dy = state.y - boss.y;
+    const length = Math.hypot(dx, dy) || 1;
+    boss.x += dx / length * boss.speed * dt;
+    boss.y += dy / length * boss.speed * dt;
+
+    if (circleHit(boss, boss.r, state, TUNING.playerRadius) && state.dashTime <= 0) {
+      damage(25, "BOSS · -25 HP");
+    }
+
+    if (state.dashTime > 0 && state.dashCharged &&
+        circleHit(boss, boss.r + 5, state, TUNING.playerRadius + 4)) {
+      state.dashCharged = false;
+      state.energy = 0;
+      boss.hp = Math.max(0, boss.hp - TUNING.bossDashDamage);
+      state.message = "DASH ELÉTRICO · -200 BOSS HP";
+      state.messageTimer = 1.1;
+      if (boss.hp <= 0) {
+        state.victory = true;
+        state.message = "FASE 2 CONCLUÍDA";
+        try {
+          localStorage.setItem("onRedPhase3Unlocked", "true");
+          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
+        } catch (_) {}
+      }
+    }
+  }
+
   function update(dt) {
-    if(!state.active || state.paused || state.over || state.victory) return;
-    state.time+=dt; state.score+=Math.floor(dt*100);
-    state.invuln=Math.max(0,state.invuln-dt); state.dashCooldown=Math.max(0,state.dashCooldown-dt);
-    state.dashTime=Math.max(0,state.dashTime-dt); state.messageTimer=Math.max(0,state.messageTimer-dt);
-    let ix=(keys.has("ArrowRight")||keys.has("KeyD")?1:0)-(keys.has("ArrowLeft")||keys.has("KeyA")?1:0);
-    let iy=(keys.has("ArrowDown")||keys.has("KeyS")?1:0)-(keys.has("ArrowUp")||keys.has("KeyW")?1:0);
-    if(state.pointer){ix=clamp((state.pointer.x-state.pointer.ox)/42,-1,1);iy=clamp((state.pointer.y-state.pointer.oy)/42,-1,1);}
-    const il=Math.hypot(ix,iy)||1;
-    if(state.dashTime<=0){state.vx=(ix/il)*TUNING.playerSpeed;state.vy=(iy/il)*TUNING.playerSpeed;}
-    state.x=clamp(state.x+state.vx*dt,TUNING.playerRadius,innerWidth-TUNING.playerRadius);
-    state.y=clamp(state.y+state.vy*dt,TUNING.playerRadius,innerHeight-TUNING.playerRadius);
-    if(state.dashTime<=0){state.vx*=Math.pow(0.001,dt);state.vy*=Math.pow(0.001,dt);}
-    state.zoneTimer-=dt; if(state.zoneTimer<=0){spawnZone();state.zoneTimer=7.5;}
-    state.mergeTimer-=dt; if(state.mergeTimer<=0){spawnMerge();state.mergeTimer=TUNING.mergeInterval;}
-    state.laserTimer-=dt;
-    if(!state.laser && state.laserTimer<=0) state.laser={axis:Math.random()<0.5?"h":"v",at:rand(innerWidth*.25,innerWidth*.75),gap:rand(0.25,0.75),phase:"warning",t:TUNING.laserWarning};
-    if(state.laser){
-      state.laser.t-=dt;
-      if(state.laser.t<=0 && state.laser.phase==="warning"){state.laser.phase="active";state.laser.t=TUNING.laserActive;}
-      else if(state.laser.t<=0){state.laser=null;state.laserTimer=TUNING.laserInterval;}
-      if(state.laser?.phase==="active"){
-        const l=state.laser, span=l.axis==="h"?innerWidth:innerHeight;
-        const along=l.axis==="h"?state.x:state.y;
-        const gapStart=l.gap*span-55;
-        const insideGap=along>=gapStart && along<=gapStart+110;
-        const onBeam=l.axis==="h"?Math.abs(state.y-l.at)<13:Math.abs(state.x-l.at)<13;
-        if(onBeam && !insideGap) damage(20*dt);
+    if (!state.active || state.paused || state.over || state.victory) return;
+    state.time += dt;
+    state.score += dt * 100;
+    state.invuln = Math.max(0, state.invuln - dt);
+    state.dashCooldown = Math.max(0, state.dashCooldown - dt);
+    state.dashTime = Math.max(0, state.dashTime - dt);
+    button.flash = Math.max(0, button.flash - dt);
+    state.messageTimer = Math.max(0, state.messageTimer - dt);
+
+    let ix = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
+             (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
+    let iy = (keys.has("ArrowDown") || keys.has("KeyS") ? 1 : 0) -
+             (keys.has("ArrowUp") || keys.has("KeyW") ? 1 : 0);
+    if (state.pointer) {
+      ix = clamp((state.pointer.x - state.pointer.ox) / 42, -1, 1);
+      iy = clamp((state.pointer.y - state.pointer.oy) / 42, -1, 1);
+    }
+    const inputLength = Math.hypot(ix, iy) || 1;
+    if (state.dashTime <= 0) {
+      state.vx = (ix / inputLength) * TUNING.playerSpeed;
+      state.vy = (iy / inputLength) * TUNING.playerSpeed;
+    }
+    state.x = clamp(state.x + state.vx * dt, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+    state.y = clamp(state.y + state.vy * dt, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+    if (state.dashTime <= 0) {
+      state.vx *= Math.pow(0.001, dt);
+      state.vy *= Math.pow(0.001, dt);
+    }
+
+    state.zoneTimer -= dt;
+    if (state.zoneTimer <= 0) {
+      spawnZone();
+      state.zoneTimer = 5.7;
+    }
+    state.mergeTimer -= dt;
+    if (state.mergeTimer <= 0) {
+      spawnMerge();
+      state.mergeTimer = TUNING.mergeInterval;
+    }
+
+    for (const zone of state.zones) {
+      zone.life -= dt;
+      zone.pulse += dt * 3;
+      if (circleHit(zone, zone.r, state, TUNING.playerRadius)) {
+        state.energy = clamp(state.energy + TUNING.energyPerZone, 0, TUNING.maxEnergy);
+        zone.life = 0;
+        state.message = "ENERGIA +25%";
+        state.messageTimer = 0.8;
       }
     }
-    for(const z of state.zones){z.life-=dt;if(dist(z,state)<z.r+TUNING.playerRadius){state.energy=clamp(state.energy+TUNING.energyPerZone,0,100);z.life=0;state.message="ENERGIA +25%";state.messageTimer=0.8;}}
-    state.zones=state.zones.filter(z=>z.life>0);
-    for(const m of state.merges){m.life-=dt;if(dist(m,state)<m.r+TUNING.playerRadius){state.hp=clamp(state.hp+TUNING.mergeHeal,0,TUNING.maxHP);state.score+=TUNING.mergeScore;m.life=0;state.message="MERGE · +25 HP · +1000";state.messageTimer=1.1;}}
-    state.merges=state.merges.filter(m=>m.life>0);
-    for(const s of state.saws){
-      s.angle+=dt*4; s.stun=Math.max(0,s.stun-dt);
-      if(s.stun<=0){const d=dist(s,state)||1;s.x+=(state.x-s.x)/d*TUNING.sawSpeed*dt;s.y+=(state.y-s.y)/d*TUNING.sawSpeed*dt;}
-      if(dist(s,state)<s.r+TUNING.playerRadius){if(state.dashTime>0){s.stun=1.2;s.hp=0;state.score+=500;state.energy=clamp(state.energy+10,0,100);}else damage(TUNING.sawDamage*dt);}
-    }
-    state.saws=state.saws.filter(s=>s.hp>0);
-    while(state.saws.length<TUNING.sawCount && !state.boss) spawnSaw();
-    if(!state.boss && state.time>=TUNING.bossTriggerSeconds) beginBoss();
-    if(state.boss){
-      const b=state.boss;b.angle+=dt*0.65;
-      const d=dist(b,state)||1;b.x+=(state.x-b.x)/d*22*dt;b.y+=(state.y-b.y)/d*22*dt;
-      if(dist(b,state)<b.r+TUNING.playerRadius && state.dashTime<=0) damage(25*dt);
-      if(state.dashTime>0 && state.dashCharged && dist(b,state)<b.r+42){
-        state.dashCharged=false; state.energy=0;
-        b.hp=Math.max(0,b.hp-TUNING.bossDashDamage);
-        if(b.hp===0){state.victory=true;state.message="FASE 2 CONCLUÍDA";try{localStorage.setItem("onRedPhase3Unlocked","true");}catch(e){}}
+    state.zones = state.zones.filter(zone => zone.life > 0);
+
+    for (const orb of state.merges) {
+      orb.life -= dt;
+      orb.pulse += dt * 3.2;
+      if (circleHit(orb, orb.r, state, TUNING.playerRadius)) {
+        const healed = Math.min(TUNING.mergeHeal, TUNING.maxHP - state.hp);
+        if (healed > 0) {
+          state.hp += healed;
+          state.score += TUNING.mergeScore;
+          state.message = "MERGE · +" + healed + " HP · +1000";
+        } else {
+          state.message = "MERGE · HP COMPLETO";
+        }
+        orb.life = 0;
+        state.messageTimer = 1.1;
       }
     }
+    state.merges = state.merges.filter(orb => orb.life > 0);
+
+    updateSaws(dt);
+    updateLasers(dt);
+    if (!state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
+    updateBoss(dt);
   }
-  function drawSaw(s) {
-    ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);ctx.fillStyle="#168BFF";ctx.strokeStyle="#9BD8FF";ctx.lineWidth=2;
-    ctx.beginPath();for(let i=0;i<24;i++){const a=i*Math.PI/12,r=i%2?s.r*.72:s.r;const x=Math.cos(a)*r,y=Math.sin(a)*r;i?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+
+  function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.fillStyle = "#168BFF";
+    ctx.strokeStyle = boss ? "#D5F0FF" : "#9BD8FF";
+    ctx.lineWidth = boss ? 4 : 2;
+    ctx.beginPath();
+    for (let i = 0; i < teeth * 2; i++) {
+      const a = i * Math.PI / teeth;
+      const r = i % 2 === 0 ? radius : radius * 0.78;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = "#0B2340";
+    ctx.fill();
+    ctx.strokeStyle = "#B9E6FF";
+    ctx.lineWidth = boss ? 3 : 1.5;
+    ctx.stroke();
+    ctx.restore();
   }
-  function draw() {
-    const w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);ctx.fillStyle="#080B12";ctx.fillRect(0,0,w,h);
-    ctx.strokeStyle="rgba(60,145,210,.08)";ctx.lineWidth=1;for(let x=0;x<w;x+=36){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}for(let y=0;y<h;y+=36){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
-    for(const z of state.zones){ctx.beginPath();ctx.arc(z.x,z.y,z.r,0,Math.PI*2);ctx.fillStyle="rgba(22,139,255,.18)";ctx.fill();ctx.strokeStyle="#58BFFF";ctx.lineWidth=2;ctx.stroke();ctx.fillStyle="#FFF";ctx.font="bold 10px Arial";ctx.textAlign="center";ctx.fillText("+25",z.x,z.y+4);}
-    for(const m of state.merges){ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.fillStyle="#FF3948";ctx.shadowColor="#FF3948";ctx.shadowBlur=15;ctx.fill();ctx.shadowBlur=0;}
-    if(state.laser){
-      const l=state.laser, span=l.axis==="h"?w:h, gapStart=l.gap*span-55, gapEnd=gapStart+110;
-      ctx.save();ctx.strokeStyle=l.phase==="warning"?"rgba(255,57,72,.55)":"#FF3948";
-      ctx.lineWidth=l.phase==="warning"?2:14;ctx.setLineDash(l.phase==="warning"?[8,8]:[]);
+
+  function drawMerge(orb) {
+    const pulse = 1 + Math.sin(orb.pulse) * 0.12;
+    const radius = orb.r * pulse;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y, radius + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,48,63,.45)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "#FF303F";
+    ctx.shadowColor = "#FF303F";
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(orb.x - radius * 0.3, orb.y - radius * 0.3, radius * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLaser(laser) {
+    const warning = laser.phase === "warning";
+    const halfGap = laser.gap / 2;
+    const start = laser.gapCenter - halfGap;
+    const end = laser.gapCenter + halfGap;
+    ctx.save();
+    ctx.strokeStyle = warning ? "rgba(255,57,72,.58)" : "#FF3948";
+    ctx.lineWidth = warning ? 2 : 15;
+    ctx.setLineDash(warning ? [8, 8] : []);
+    ctx.beginPath();
+    if (laser.axis === "h") {
+      ctx.moveTo(0, laser.at); ctx.lineTo(start, laser.at);
+      ctx.moveTo(end, laser.at); ctx.lineTo(innerWidth, laser.at);
+    } else {
+      ctx.moveTo(laser.at, 0); ctx.lineTo(laser.at, start);
+      ctx.moveTo(laser.at, end); ctx.lineTo(laser.at, innerHeight);
+    }
+    ctx.stroke();
+    ctx.restore();
+    if (warning) {
+      ctx.fillStyle = "#58BFFF";
+      ctx.font = "bold 10px Arial";
+      ctx.textAlign = "center";
+      if (laser.axis === "h") ctx.fillText("BRECHA SEGURA", laser.gapCenter, laser.at - 12);
+      else ctx.fillText("BRECHA SEGURA", laser.at + 58, laser.gapCenter);
+    }
+  }
+
+  function drawHealthHUD() {
+    const x = 22;
+    const y = 64;
+    const lifeRadius = 7;
+    const spacing = 23;
+    for (let i = 0; i < TUNING.lives; i++) {
+      const lifeX = x + lifeRadius + i * spacing;
       ctx.beginPath();
-      if(l.axis==="h"){ctx.moveTo(0,l.at);ctx.lineTo(gapStart,l.at);ctx.moveTo(gapEnd,l.at);ctx.lineTo(w,l.at);}
-      else{ctx.moveTo(l.at,0);ctx.lineTo(l.at,gapStart);ctx.moveTo(l.at,gapEnd);ctx.lineTo(l.at,h);}
-      ctx.stroke();ctx.restore();
-      ctx.fillStyle="#58BFFF";ctx.font="bold 10px Arial";ctx.textAlign="center";
-      if(l.axis==="h")ctx.fillText("BRECHA SEGURA",clamp((gapStart+gapEnd)/2,65,w-65),l.at-12);
-      else ctx.fillText("BRECHA SEGURA",l.at+58,clamp((gapStart+gapEnd)/2,50,h-50));
+      ctx.arc(lifeX, y, lifeRadius, 0, Math.PI * 2);
+      if (i < state.lives) {
+        ctx.shadowColor = "#FF303F";
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = "#FF303F";
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(lifeX, y - lifeRadius * 0.35, lifeRadius * 0.24, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,.7)";
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "#54232B";
+        ctx.fill();
+      }
     }
-    state.saws.forEach(drawSaw);
-    if(state.boss){const b=state.boss;ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle);ctx.fillStyle="#168BFF";ctx.strokeStyle="#9BD8FF";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(0,-b.r);ctx.lineTo(b.r*.92,b.r*.72);ctx.lineTo(-b.r*.92,b.r*.72);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();ctx.fillStyle="#263648";ctx.fillRect(w*.2,20,w*.6,8);ctx.fillStyle="#168BFF";ctx.fillRect(w*.2,20,w*.6*(b.hp/b.maxHP),8);ctx.fillStyle="#FFF";ctx.font="bold 11px Arial";ctx.textAlign="center";ctx.fillText("SERRA GIGANTE",w/2,15);}
-    ctx.beginPath();ctx.arc(state.x,state.y,TUNING.playerRadius,0,Math.PI*2);ctx.fillStyle=state.energy>=100?"#FFFFFF":`rgb(255,${Math.round(57+198*state.energy/100)},${Math.round(72+183*state.energy/100)})`;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=state.dashTime>0?24:10;ctx.fill();ctx.shadowBlur=0;
-    ctx.fillStyle="#FFF";ctx.font="bold 12px Arial";ctx.textAlign="left";ctx.fillText("HP "+Math.ceil(state.hp)+"/80",18,24);ctx.fillText("VIDAS "+state.lives,18,43);ctx.fillText("ENERGIA "+Math.floor(state.energy)+"%",18,62);ctx.fillText("SCORE "+Math.floor(state.score),18,81);
-    ctx.fillStyle="#253448";ctx.fillRect(18,91,120,5);ctx.fillStyle="#168BFF";ctx.fillRect(18,91,120*state.energy/100,5);
-    ctx.textAlign="right";ctx.fillStyle="#FFF";ctx.fillText("DASH "+(state.dashCooldown>0?state.dashCooldown.toFixed(1)+"s":state.energy>=25?"PRONTO":"25% ENERGIA"),w-18,24);
-    if(state.messageTimer>0){ctx.textAlign="center";ctx.font="bold 13px Arial";ctx.fillStyle="#FFF";ctx.fillText(state.message,w/2,h*.17);}
-    if(state.paused||state.over||state.victory){ctx.fillStyle="rgba(0,0,0,.76)";ctx.fillRect(0,0,w,h);ctx.textAlign="center";ctx.fillStyle="#FFF";ctx.font="900 28px Arial";ctx.fillText(state.paused?"PAUSADO":state.victory?"FASE 2 CONCLUÍDA":"GAME OVER",w/2,h/2-28);ctx.font="bold 13px Arial";ctx.fillStyle="#58BFFF";ctx.fillText("Toque para "+(state.paused?"continuar":"reiniciar"),w/2,h/2+8);ctx.fillText("ESC para voltar ao menu",w/2,h/2+32);}
-    if("ontouchstart" in window){ctx.textAlign="left";ctx.fillStyle="rgba(255,255,255,.55)";ctx.font="10px Arial";ctx.fillText("JOYSTICK",24,h-22);ctx.textAlign="right";ctx.fillText("DASH",w-24,h-22);ctx.beginPath();ctx.arc(w-52,h-58,30,0,Math.PI*2);ctx.strokeStyle="rgba(88,191,255,.55)";ctx.lineWidth=2;ctx.stroke();ctx.fillStyle="rgba(88,191,255,.16)";ctx.fill();}
+
+    const barX = x;
+    const barY = y + 25;
+    const barWidth = 125;
+    const barHeight = 9;
+    const ratio = clamp(state.hp / TUNING.maxHP, 0, 1);
+    ctx.fillStyle = "#303743";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    if (ratio > 0) {
+      ctx.shadowColor = "#FF303F";
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "#FF303F";
+      ctx.fillRect(barX, barY, barWidth * ratio, barHeight);
+      ctx.shadowBlur = 0;
+    }
+    ctx.strokeStyle = "rgba(255,255,255,.15)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 10px Arial";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("HP", barX, barY + 19);
+    ctx.textAlign = "right";
+    ctx.fillText(Math.ceil(state.hp) + "/80", barX + barWidth, barY + 19);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#AAB4C3";
+    ctx.fillText("ENERGIA " + Math.floor(state.energy) + "%", barX, barY + 35);
+    ctx.fillStyle = "#303743";
+    ctx.fillRect(barX, barY + 42, barWidth, 5);
+    ctx.fillStyle = "#168BFF";
+    ctx.fillRect(barX, barY + 42, barWidth * state.energy / TUNING.maxEnergy, 5);
   }
-  function frame(ts){if(!state.active)return;const dt=state.last?Math.min((ts-state.last)/1000,.04):0;state.last=ts;update(dt);draw();requestAnimationFrame(frame);}
-  function launch(){reset();document.getElementById("mainMenu")?.classList.add("hidden");requestAnimationFrame(frame);}
-  document.getElementById("phaseTwoButton")?.addEventListener("click",launch);
-  function exit(){state.active=false;state.paused=false;keys.clear();state.pointer=null;document.getElementById("mainMenu")?.classList.remove("hidden");}
-  window.addEventListener("keydown",e=>{if(!state.active)return;keys.add(e.code);if(e.code==="ShiftLeft"||e.code==="ShiftRight")startDash();if(e.code==="Escape"){e.preventDefault();if(state.over||state.victory)exit();else state.paused=!state.paused;}if((state.over||state.victory)&&e.code==="Enter")launch();});
-  window.addEventListener("keyup",e=>keys.delete(e.code));
-  canvas.addEventListener("pointerdown",e=>{if(!state.active)return;if(state.over||state.victory){launch();return;}if(state.paused){state.paused=false;state.last=0;return;}if(e.clientX>innerWidth*.65&&e.clientY>innerHeight*.55){startDash();return;}if(e.clientX<innerWidth*.55&&e.clientY>innerHeight*.48){state.pointerId=e.pointerId;state.pointer={ox:e.clientX,oy:e.clientY,x:e.clientX,y:e.clientY};}});
-  canvas.addEventListener("pointermove",e=>{if(state.active&&state.pointerId===e.pointerId&&state.pointer){state.pointer.x=e.clientX;state.pointer.y=e.clientY;}});
-  const release=e=>{if(state.pointerId===e.pointerId){state.pointer=null;state.pointerId=null;}};
-  canvas.addEventListener("pointerup",release);canvas.addEventListener("pointercancel",release);
-  window.addEventListener("resize",resize);resize();
-  window.ONREDPhase2Game={start:launch,exit,getState:()=>({...state,saws:state.saws.length,zones:state.zones.length,merges:state.merges.length})};
+
+  // Mesmo quadrado preenchido por carga usado pelo Perfect Timing da Fase 1.
+  // Na Fase 2, a carga representa a recarga do DASH.
+  function drawDashButton() {
+    const x = button.x, y = button.y, size = button.size;
+    const padding = 5;
+    const innerSize = size - padding * 2;
+    const charge = 1 - clamp(state.dashCooldown / TUNING.dashCooldown, 0, 1);
+    const fillHeight = innerSize * charge;
+
+    ctx.fillStyle = "#101820";
+    ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = charge >= 1 ? "#168BFF" : "#07539C";
+    ctx.fillRect(x + padding, y + size - padding - fillHeight, innerSize, fillHeight);
+    ctx.strokeStyle = button.flash > 0 ? "#FFFFFF" : "#168BFF";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, size, size);
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold 11px Arial";
+    let label;
+    if (state.dashCooldown > 0) label = state.dashCooldown.toFixed(1) + "s";
+    else if (state.energy >= TUNING.dashCost) label = "DASH";
+    else label = "ENERGY";
+    ctx.fillText(label, x + size / 2, y + size / 2 - 1);
+    if (state.dashCooldown <= 0 && state.energy < TUNING.dashCost) {
+      ctx.font = "bold 9px Arial";
+      ctx.fillText(state.energy + "/" + TUNING.dashCost, x + size / 2, y + size / 2 + 13);
+    }
+  }
+
+  function draw() {
+    const w = innerWidth, h = innerHeight;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#080B12";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(60,145,210,.08)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 36) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let y = 0; y < h; y += 36) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    for (const zone of state.zones) {
+      ctx.beginPath();
+      ctx.arc(zone.x, zone.y, zone.r + Math.sin(zone.pulse) * 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(22,139,255,.18)";
+      ctx.fill();
+      ctx.strokeStyle = "#58BFFF";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "bold 10px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("+25", zone.x, zone.y + 4);
+    }
+
+    state.merges.forEach(drawMerge);
+    state.lasers.forEach(drawLaser);
+    state.saws.forEach(saw => drawSawShape(saw.x, saw.y, saw.r, saw.angle));
+
+    if (state.boss) {
+      const boss = state.boss;
+      drawSawShape(boss.x, boss.y, boss.r, boss.angle, 32, true);
+      ctx.fillStyle = "#263648";
+      ctx.fillRect(w * 0.2, 20, w * 0.6, 8);
+      ctx.fillStyle = "#168BFF";
+      ctx.fillRect(w * 0.2, 20, w * 0.6 * (boss.hp / boss.maxHP), 8);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "bold 11px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("SERRA GIGANTE", w / 2, 15);
+    }
+
+    ctx.beginPath();
+    ctx.arc(state.x, state.y, TUNING.playerRadius, 0, Math.PI * 2);
+    const colorRatio = clamp(state.energy / TUNING.maxEnergy, 0, 1);
+    ctx.fillStyle = "rgb(255," +
+      Math.round(107 + (255 - 107) * colorRatio) + "," +
+      Math.round(112 + (255 - 112) * colorRatio) + ")";
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = state.dashTime > 0 ? 24 : 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (state.invuln > 0 && Math.floor(state.time * 16) % 2 === 0) {
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, TUNING.playerRadius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,.65)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 18px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(String(Math.floor(state.score)).padStart(6, "0"), w / 2, 18);
+    drawHealthHUD();
+    drawDashButton();
+
+    if (state.messageTimer > 0) {
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "bold 13px Arial";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(state.message, w / 2, h * 0.17);
+    }
+
+    if (state.paused || state.over || state.victory) {
+      ctx.fillStyle = "rgba(0,0,0,.76)";
+      ctx.fillRect(0, 0, w, h);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "900 28px Arial";
+      ctx.fillText(state.paused ? "PAUSADO" : state.victory ? "FASE 2 CONCLUÍDA" : "GAME OVER", w / 2, h / 2 - 28);
+      ctx.font = "bold 13px Arial";
+      ctx.fillStyle = "#58BFFF";
+      ctx.fillText("Toque para " + (state.paused ? "continuar" : "reiniciar"), w / 2, h / 2 + 8);
+      ctx.fillText("ESC para voltar ao menu", w / 2, h / 2 + 32);
+    }
+  }
+
+  function frame(ts) {
+    if (!state.active) return;
+    const dt = state.last ? Math.min((ts - state.last) / 1000, 0.04) : 0;
+    state.last = ts;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function launch() {
+    reset();
+    document.getElementById("mainMenu")?.classList.add("hidden");
+    requestAnimationFrame(frame);
+  }
+
+  function exit() {
+    state.active = false;
+    state.paused = false;
+    keys.clear();
+    state.pointer = null;
+    document.getElementById("mainMenu")?.classList.remove("hidden");
+  }
+
+  document.getElementById("phaseTwoButton")?.addEventListener("click", launch);
+
+  window.addEventListener("keydown", event => {
+    if (!state.active) return;
+    keys.add(event.code);
+    if (event.code === "ShiftLeft" || event.code === "ShiftRight") startDash();
+    if (event.code === "Escape") {
+      event.preventDefault();
+      if (state.over || state.victory) exit();
+      else state.paused = !state.paused;
+    }
+    if ((state.over || state.victory) && event.code === "Enter") launch();
+  });
+  window.addEventListener("keyup", event => keys.delete(event.code));
+
+  canvas.addEventListener("pointerdown", event => {
+    if (!state.active) return;
+    if (state.over || state.victory) { launch(); return; }
+    if (state.paused) { state.paused = false; state.last = 0; return; }
+
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const hitPadding = 12;
+    const onDashButton =
+      px >= button.x - hitPadding && px <= button.x + button.size + hitPadding &&
+      py >= button.y - hitPadding && py <= button.y + button.size + hitPadding;
+    if (onDashButton) { startDash(); return; }
+
+    if (px < innerWidth * 0.58 && py > innerHeight * 0.42 && !state.pointer) {
+      state.pointerId = event.pointerId;
+      state.pointer = { ox: px, oy: py, x: px, y: py };
+      try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+    }
+  });
+
+  canvas.addEventListener("pointermove", event => {
+    if (!state.active || state.pointerId !== event.pointerId || !state.pointer) return;
+    const rect = canvas.getBoundingClientRect();
+    state.pointer.x = event.clientX - rect.left;
+    state.pointer.y = event.clientY - rect.top;
+  });
+
+  const releasePointer = event => {
+    if (state.pointerId === event.pointerId) {
+      state.pointer = null;
+      state.pointerId = null;
+    }
+  };
+  canvas.addEventListener("pointerup", releasePointer);
+  canvas.addEventListener("pointercancel", releasePointer);
+
+  window.addEventListener("resize", () => {
+    state.x = clamp(state.x || innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+    state.y = clamp(state.y || innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+    updateButtonPosition();
+  });
+
+  updateButtonPosition();
+  window.ONREDPhase2Game = {
+    start: launch,
+    exit,
+    getState: () => ({
+      ...state,
+      saws: state.saws.length,
+      zones: state.zones.length,
+      merges: state.merges.length,
+      lasers: state.lasers.length
+    })
+  };
 })();
