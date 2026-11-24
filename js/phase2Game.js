@@ -84,7 +84,7 @@
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
-    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, frameStartX: 0, frameStartY: 0, knockbackTime: 0, shieldHitsRemaining: 0, last: 0,
+    invuln: 0, x: 0, y: 0, vx: 0, vy: 0, frameStartX: 0, frameStartY: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
@@ -584,6 +584,7 @@
     state.energy = Math.max(0, state.energy - TUNING.dashCost);
     state.dashTime = TUNING.dashDuration;
     state.dashCooldown = TUNING.dashCooldown;
+    state.dashEffectRolled = false;
     button.flash = 0.25;
 
     // O DASH cancela o empurrão recebido: não reutiliza a velocidade do knockback.
@@ -691,6 +692,7 @@
       state.sawSpawnTimer = 6;
     }
 
+    let sawKillsThisFrame = 0;
     for (const saw of state.saws) {
       const sawStartX = saw.x;
       const sawStartY = saw.y;
@@ -719,6 +721,7 @@
         if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
+          sawKillsThisFrame++;
           state.message = "SERRA DESTRUÍDA";
           state.messageTimer = 0.8;
         } else {
@@ -744,6 +747,11 @@
       }
     }
 
+    // Mantém um único efeito aleatório por evento de DASH, mesmo no multi-kill.
+    if (sawKillsThisFrame > 0 && !state.dashEffectRolled) {
+      state.dashEffectRolled = true;
+      activateRandomEffect();
+    }
     const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
     if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
