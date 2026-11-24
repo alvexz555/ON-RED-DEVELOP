@@ -12,7 +12,8 @@
 
   const TUNING = Object.freeze({
     maxHP: 80,
-    lives: 4,
+    startingLives: 4,
+    maxLives: 6,
     energyPerZone: 25,
     maxEnergy: 100,
     dashCost: 25,
@@ -34,19 +35,49 @@
     mergeInterval: 7,
     bossTriggerSeconds: 105,
     bossHP: 1200,
-    bossDashDamage: 200
+    bossDashDamage: 200,
+    gravityDuration: 5,
+    ghostDuration: 5,
+    inversionDuration: 3,
+    freezeDuration: 3,
+    pingPongDamage: 50,
+    pingPongSpeed: 2600
   });
 
   const keys = new Set();
   const button = { size: 64, margin: 28, x: 0, y: 0, flash: 0 };
+  const ui = {
+    mainMenu: document.getElementById("mainMenu"),
+    pauseButton: document.getElementById("pauseButton"),
+    pauseScreen: document.getElementById("pauseScreen"),
+    resumeButton: document.getElementById("resumeButton"),
+    pauseRestartButton: document.getElementById("pauseRestartButton"),
+    pauseMenuButton: document.getElementById("pauseMenuButton"),
+    gameOverScreen: document.getElementById("gameOverScreen"),
+    finalScore: document.getElementById("finalScore"),
+    bestScoreGameOver: document.getElementById("bestScoreGameOver"),
+    reviveButton: document.getElementById("reviveButton"),
+    reviveUnavailable: document.getElementById("reviveUnavailable"),
+    retryButton: document.getElementById("retryButton"),
+    gameOverMenuButton: document.getElementById("gameOverMenuButton"),
+    victoryScreen: document.getElementById("victoryScreen"),
+    victoryFinalScore: document.getElementById("victoryFinalScore"),
+    victoryBestScore: document.getElementById("victoryBestScore"),
+    victoryRetryButton: document.getElementById("victoryRetryButton"),
+    victoryMenuButton: document.getElementById("victoryMenuButton")
+  };
   const state = {
     active: false, paused: false, over: false, victory: false,
-    time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.lives,
+    time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
+    effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
+    gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
-    sawSpawnTimer: 0, zoneTimer: 1, mergeTimer: 3,
+    sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
     boss: null, pointer: null, pointerId: null,
+    revivesUsed: 0, bossDefeated: false, postBoss: false,
+    gameOverShown: false, victoryShown: false,
     message: "", messageTimer: 0, best: 0
   };
 
@@ -65,11 +96,19 @@
     state.paused = false;
     state.over = false;
     state.victory = false;
+    state.revivesUsed = 0;
+    state.bossDefeated = false;
+    state.postBoss = false;
+    state.gameOverShown = false;
+    state.victoryShown = false;
     state.time = 0;
     state.score = 0;
     state.hp = TUNING.maxHP;
-    state.lives = TUNING.lives;
+    state.lives = TUNING.startingLives;
     state.energy = 0;
+    state.effects = { gravity: 0, ghost: 0, invert: 0, freeze: 0 };
+    state.gravityPoint = null;
+    state.pingPongs = [];
     state.dashCooldown = 0;
     state.dashTime = 0;
     state.dashCharged = false;
@@ -84,6 +123,7 @@
     state.lasers = [];
     state.laserTimer = 3.2;
     state.sawSpawnTimer = 0;
+    state.sawRestTimer = 0;
     state.zoneTimer = 1;
     state.mergeTimer = 3;
     state.boss = null;
@@ -100,6 +140,194 @@
       state.best = 0;
     }
     state.last = 0;
+    hideScreen(ui.pauseScreen);
+    hideScreen(ui.gameOverScreen);
+    hideScreen(ui.victoryScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    updateReviveOffer();
+  }
+
+  function hideScreen(element) {
+    if (!element) return;
+    element.classList.remove("active");
+    element.setAttribute("aria-hidden", "true");
+  }
+
+  function showScreen(element) {
+    if (!element) return;
+    element.classList.add("active");
+    element.setAttribute("aria-hidden", "false");
+  }
+
+  function hideAllScreens() {
+    hideScreen(ui.pauseScreen);
+    hideScreen(ui.gameOverScreen);
+    hideScreen(ui.victoryScreen);
+  }
+
+  function saveBestScore() {
+    const score = Math.floor(state.score);
+    if (score <= state.best) return;
+    state.best = score;
+    try { localStorage.setItem("onRedPhase2Best", String(score)); } catch (_) {}
+  }
+
+  function updateReviveOffer() {
+    const available = state.revivesUsed < 1 ||
+      (state.bossDefeated && state.revivesUsed < 2);
+    if (ui.reviveButton) {
+      ui.reviveButton.hidden = !available;
+      ui.reviveButton.textContent = state.revivesUsed === 0
+        ? "REVIVER GRATUITAMENTE"
+        : "REVIVER · 2ª CHANCE";
+    }
+    if (ui.reviveUnavailable) {
+      ui.reviveUnavailable.hidden = available;
+      ui.reviveUnavailable.textContent = state.bossDefeated
+        ? "AS DUAS CONTINUAÇÕES FORAM UTILIZADAS · FIM DE JOGO"
+        : "CONTINUAÇÃO UTILIZADA · VENÇA O BOSS PARA DESBLOQUEAR A SEGUNDA";
+    }
+  }
+
+  function triggerGameOver() {
+    if (state.gameOverShown) return;
+    state.gameOverShown = true;
+    saveBestScore();
+    updateReviveOffer();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    hideScreen(ui.pauseScreen);
+    if (ui.finalScore) ui.finalScore.textContent = String(Math.floor(state.score)).padStart(6, "0");
+    if (ui.bestScoreGameOver) ui.bestScoreGameOver.textContent = String(state.best).padStart(6, "0");
+    showScreen(ui.gameOverScreen);
+    if (window.ONREDAudio) {
+      window.ONREDAudio.stopMusic();
+      window.ONREDAudio.play("gameOver");
+    }
+    if (window.ONREDPlaygama &&
+        typeof window.ONREDPlaygama.showInterstitialAtNaturalBreak === "function") {
+      window.ONREDPlaygama.showInterstitialAtNaturalBreak();
+    }
+  }
+
+  function triggerVictory() {
+    if (state.victoryShown) return;
+    state.victoryShown = true;
+    saveBestScore();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    hideScreen(ui.pauseScreen);
+    if (ui.victoryFinalScore) ui.victoryFinalScore.textContent = String(Math.floor(state.score)).padStart(6, "0");
+    if (ui.victoryBestScore) ui.victoryBestScore.textContent = String(state.best).padStart(6, "0");
+    const label = ui.victoryScreen?.querySelector(".game-over-label");
+    const title = ui.victoryScreen?.querySelector(".victory-title");
+    const copy = ui.victoryScreen?.querySelector(".victory-copy strong");
+    if (label) label.textContent = "FASE 2 CONCLUÍDA";
+    if (title) title.textContent = "VOCÊ DERROTOU A SERRA GIGANTE.";
+    if (copy) copy.textContent = "FASE 3 DESBLOQUEADA · CONTINUE A SOBREVIVÊNCIA";
+    showScreen(ui.victoryScreen);
+    if (window.ONREDAudio) {
+      window.ONREDAudio.stopMusic();
+      window.ONREDAudio.play("victory");
+    }
+  }
+
+  function pauseGame() {
+    if (!state.active || state.paused || state.over || state.victory) return false;
+    state.paused = true;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    state.last = 0;
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    showScreen(ui.pauseScreen);
+    if (window.ONREDAudio && typeof window.ONREDAudio.pauseMusic === "function") {
+      window.ONREDAudio.pauseMusic();
+    }
+    return true;
+  }
+
+  function resumeGame() {
+    if (!state.active || !state.paused) return false;
+    state.paused = false;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    state.last = 0;
+    hideScreen(ui.pauseScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio && typeof window.ONREDAudio.resumeMusic === "function") {
+      window.ONREDAudio.resumeMusic();
+    }
+    return true;
+  }
+
+  function reviveGame() {
+    const available = state.revivesUsed < 1 ||
+      (state.bossDefeated && state.revivesUsed < 2);
+    if (!state.active || !state.over || !available) return false;
+    state.revivesUsed += 1;
+    state.over = false;
+    state.gameOverShown = false;
+    state.paused = false;
+    state.lives = 1;
+    state.hp = Math.min(50, TUNING.maxHP);
+    state.invuln = 2;
+    state.x = clamp(innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+    state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
+    state.vx = 0;
+    state.vy = 0;
+    state.pointer = null;
+    state.pointerId = null;
+    state.dashTime = 0;
+    keys.clear();
+    state.last = 0;
+    updateReviveOffer();
+    hideScreen(ui.gameOverScreen);
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio) {
+      window.ONREDAudio.play("revive");
+      window.ONREDAudio.playMusic(state.boss && state.bossDefeated ? "boss" : "gameplay");
+    }
+    return true;
+  }
+
+  function continueAfterBoss() {
+    if (!state.active || !state.victory || !state.bossDefeated) return false;
+    state.victory = false;
+    state.victoryShown = false;
+    state.postBoss = true;
+    state.boss = null;
+    state.saws = [];
+    state.lasers = [];
+    state.pingPongs = [];
+    state.sawRestTimer = 4;
+    state.sawSpawnTimer = 0;
+    state.laserTimer = 2.5;
+    state.invuln = 1.5;
+    state.last = 0;
+    hideScreen(ui.victoryScreen);
+    updateReviveOffer();
+    if (window.ONREDAudio) window.ONREDAudio.playMusic("gameplay");
+    return true;
+  }
+
+  function exit() {
+    state.active = false;
+    state.paused = false;
+    keys.clear();
+    state.pointer = null;
+    state.pointerId = null;
+    state.vx = 0;
+    state.vy = 0;
+    hideAllScreens();
+    if (ui.pauseButton) ui.pauseButton.style.display = "none";
+    if (window.ONREDAudio && typeof window.ONREDAudio.stopMusic === "function") {
+      window.ONREDAudio.stopMusic();
+    }
+    if (ui.mainMenu) ui.mainMenu.classList.remove("hidden");
   }
 
   function spawnSaw() {
@@ -142,10 +370,23 @@
   function spawnLaser() {
     const maxLasers = state.time >= 55 ? 3 : state.time >= 20 ? 2 : 1;
     if (state.lasers.length >= maxLasers) return;
-    const axis = Math.random() < 0.5 ? "h" : "v";
-    const at = rand(axis === "h" ? 80 : 70, axis === "h" ? innerHeight - 80 : innerWidth - 70);
+    const moving = Math.hypot(state.vx, state.vy) > 35;
+    const leadTime = 0.62;
+    const projectedX = clamp(state.x + (moving ? state.vx * leadTime : 0), 24, innerWidth - 24);
+    const projectedY = clamp(state.y + (moving ? state.vy * leadTime : 0), 24, innerHeight - 24);
+    // O feixe aparece à frente do deslocamento dominante do jogador.
+    const axis = moving
+      ? (Math.abs(state.vx) >= Math.abs(state.vy) ? "v" : "h")
+      : (Math.random() < 0.5 ? "h" : "v");
     const span = axis === "h" ? innerWidth : innerHeight;
-    const gapCenter = rand(Math.min(120, span * 0.35), Math.max(span - 120, span * 0.65));
+    const at = axis === "h"
+      ? clamp(projectedY, 70, innerHeight - 70)
+      : clamp(projectedX, 70, innerWidth - 70);
+    // A brecha fica deslocada da trajetória prevista, exigindo uma mudança de rota.
+    const safeOffset = Math.min(175, span * 0.22);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const projectedAlong = axis === "h" ? projectedX : projectedY;
+    const gapCenter = clamp(projectedAlong + safeOffset * side, 55, span - 55);
     state.lasers.push({
       axis, at, gapCenter, gap: TUNING.laserGap,
       phase: "warning", t: TUNING.laserWarning,
@@ -153,8 +394,77 @@
     });
   }
 
-  function damage(amount, message = "IMPACTO") {
-    if (state.invuln > 0 || state.over || state.victory || amount <= 0) return false;
+  function activateRandomEffect() {
+    // 10% para o efeito negativo raro. Os outros 90% são divididos entre os cinco efeitos escolhidos.
+    const roll = Math.random();
+    if (roll < 0.10) {
+      const side = Math.floor(Math.random() * 4);
+      const targetX = state.x, targetY = state.y;
+      let x = 0, y = 0;
+      if (side === 0) { x = -18; y = rand(0, innerHeight); }
+      else if (side === 1) { x = innerWidth + 18; y = rand(0, innerHeight); }
+      else if (side === 2) { x = rand(0, innerWidth); y = -18; }
+      else { x = rand(0, innerWidth); y = innerHeight + 18; }
+      const dx = targetX - x, dy = targetY - y;
+      const length = Math.hypot(dx, dy) || 1;
+      state.pingPongs.push({ x, y, vx: dx / length * TUNING.pingPongSpeed,
+        vy: dy / length * TUNING.pingPongSpeed, r: 9, life: 2.5 });
+      state.message = "PING PONG FANTASMA · PERIGO";
+      state.messageTimer = 1.4;
+      return "pingpong";
+    }
+
+    const effects = ["gravity", "ghost", "invert", "freeze", "extraLives"];
+    const chosen = effects[Math.floor(Math.random() * effects.length)];
+    if (chosen === "gravity") {
+      state.effects.gravity = TUNING.gravityDuration;
+      state.gravityPoint = { x: rand(innerWidth * 0.25, innerWidth * 0.75),
+        y: rand(innerHeight * 0.25, innerHeight * 0.75) };
+      state.message = "GRAVIDADE · SERRAS ATRAÍDAS";
+    } else if (chosen === "ghost") {
+      state.effects.ghost = TUNING.ghostDuration;
+      state.message = "FANTASMA · SERRAS NÃO CAUSAM DANO";
+    } else if (chosen === "invert") {
+      state.effects.invert = TUNING.inversionDuration;
+      state.message = "INVERSÃO · CONTROLES ALTERADOS";
+    } else if (chosen === "freeze") {
+      state.effects.freeze = TUNING.freezeDuration;
+      state.message = "TEMPO CONGELADO";
+    } else {
+      state.lives = Math.min(TUNING.maxLives, state.lives + 2);
+      state.message = "+2 VIDAS";
+    }
+    state.messageTimer = 1.4;
+    return chosen;
+  }
+
+  function segmentDistanceSquared(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq > 0 ? clamp(((px - ax) * abx + (py - ay) * aby) / lengthSq, 0, 1) : 0;
+    const dx = px - (ax + abx * t), dy = py - (ay + aby * t);
+    return dx * dx + dy * dy;
+  }
+
+  function updatePingPongs(dt) {
+    if (state.effects.freeze > 0) return;
+    for (const ball of state.pingPongs) {
+      const oldX = ball.x, oldY = ball.y;
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      ball.life -= dt;
+      const hitRadius = ball.r + TUNING.playerRadius;
+      if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
+        damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP", true);
+        ball.life = 0;
+      }
+    }
+    state.pingPongs = state.pingPongs.filter(ball => ball.life > 0 &&
+      ball.x > -40 && ball.x < innerWidth + 40 && ball.y > -40 && ball.y < innerHeight + 40);
+  }
+
+  function damage(amount, message = "IMPACTO", bypassInvulnerability = false) {
+    if ((!bypassInvulnerability && state.invuln > 0) || state.over || state.victory || amount <= 0) return false;
     state.hp = Math.max(0, state.hp - amount);
     state.invuln = 0.9;
     state.message = message;
@@ -164,17 +474,22 @@
       if (state.lives <= 0) {
         state.over = true;
         state.message = "GAME OVER";
-        try {
-          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
-        } catch (_) {}
+        triggerGameOver();
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
-        state.x = innerWidth / 2;
-        state.y = innerHeight / 2;
+        state.x = clamp(innerWidth / 2, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
+        state.y = clamp(innerHeight / 2, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
         state.vx = 0;
         state.vy = 0;
+        state.pointer = null;
+        state.pointerId = null;
+        keys.clear();
+        state.dashTime = 0;
+        state.dashCharged = false;
+        state.dashCooldown = 0;
         state.energy = 0;
+        state.last = 0;
         state.message = "VIDA PERDIDA";
         state.messageTimer = 1.5;
       }
@@ -222,11 +537,14 @@
   }
 
   function updateLasers(dt) {
+    if (state.effects.freeze > 0) return;
     state.laserTimer -= dt;
     if (state.laserTimer <= 0) {
       spawnLaser();
       state.laserTimer = state.time >= 55 ? 1.15 : state.time >= 20 ? 2.1 : TUNING.laserInterval;
     }
+
+    if (state.effects.freeze > 0) return;
 
     for (const laser of state.lasers) {
       laser.t -= dt;
@@ -251,30 +569,46 @@
   }
 
   function updateSaws(dt) {
-    state.sawSpawnTimer -= dt;
+    if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
+
+    if (!state.boss && state.saws.length === 0) {
+      if (state.sawRestTimer <= 0) state.sawRestTimer = 8;
+      state.sawRestTimer = Math.max(0, state.sawRestTimer - dt);
+      if (state.sawRestTimer === 0) {
+        for (let i = 0; i < desired; i++) spawnSaw();
+        state.sawSpawnTimer = 6;
+      }
+      return;
+    }
+
+    state.sawRestTimer = 0;
+    state.sawSpawnTimer -= dt;
     if (!state.boss && state.saws.length < desired && state.sawSpawnTimer <= 0) {
       spawnSaw();
-      state.sawSpawnTimer = 1.5;
+      state.sawSpawnTimer = 6;
     }
 
     for (const saw of state.saws) {
       saw.angle += dt * 5.2;
       saw.stun = Math.max(0, saw.stun - dt);
       if (saw.stun <= 0) {
-        const dx = state.x - saw.x;
-        const dy = state.y - saw.y;
+        const target = state.effects.gravity > 0 && state.gravityPoint ? state.gravityPoint : state;
+        const dx = target.x - saw.x;
+        const dy = target.y - saw.y;
         const length = Math.hypot(dx, dy) || 1;
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
       if (circleHit(saw, saw.r, state, TUNING.playerRadius)) {
+        if (state.effects.ghost > 0) continue;
         if (state.dashTime > 0) {
           saw.hp = 0;
           state.score += 500;
           state.energy = clamp(state.energy + 10, 0, TUNING.maxEnergy);
           state.message = "SERRA DESTRUÍDA · +500";
           state.messageTimer = 0.8;
+          activateRandomEffect();
         } else {
           damage(TUNING.sawDamage, "SERRA · -20 HP");
         }
@@ -297,7 +631,14 @@
       }
     }
 
+    const beforeFilter = state.saws.length;
     state.saws = state.saws.filter(saw => saw.hp > 0);
+    if (beforeFilter > 0 && state.saws.length === 0 && !state.boss) {
+      state.hp = TUNING.maxHP;
+      state.lives = TUNING.maxLives;
+      state.message = "ONDA CONCLUÍDA · HP E VIDAS RESTAURADOS";
+      state.messageTimer = 2.2;
+    }
   }
 
   function updateBoss(dt) {
@@ -322,12 +663,15 @@
       state.message = "DASH ELÉTRICO · -200 BOSS HP";
       state.messageTimer = 1.1;
       if (boss.hp <= 0) {
+        state.bossDefeated = true;
         state.victory = true;
         state.message = "FASE 2 CONCLUÍDA";
-        try {
-          localStorage.setItem("onRedPhase3Unlocked", "true");
-          if (state.score > state.best) localStorage.setItem("onRedPhase2Best", String(Math.floor(state.score)));
-        } catch (_) {}
+        state.messageTimer = 3;
+        state.boss = null;
+        state.saws = [];
+        state.lasers = [];
+        try { localStorage.setItem("onRedPhase3Unlocked", "true"); } catch (_) {}
+        triggerVictory();
       }
     }
   }
@@ -341,6 +685,8 @@
     state.dashTime = Math.max(0, state.dashTime - dt);
     button.flash = Math.max(0, button.flash - dt);
     state.messageTimer = Math.max(0, state.messageTimer - dt);
+    for (const key of Object.keys(state.effects)) state.effects[key] = Math.max(0, state.effects[key] - dt);
+    if (state.effects.gravity <= 0) state.gravityPoint = null;
 
     let ix = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
              (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
@@ -350,6 +696,7 @@
       ix = clamp((state.pointer.x - state.pointer.ox) / 42, -1, 1);
       iy = clamp((state.pointer.y - state.pointer.oy) / 42, -1, 1);
     }
+    if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
     if (state.dashTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
@@ -403,10 +750,11 @@
     }
     state.merges = state.merges.filter(orb => orb.life > 0);
 
+    updatePingPongs(dt);
     updateSaws(dt);
     updateLasers(dt);
-    if (!state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
-    updateBoss(dt);
+    if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
+    if (state.effects.freeze <= 0) updateBoss(dt);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
@@ -479,13 +827,6 @@
     }
     ctx.stroke();
     ctx.restore();
-    if (warning) {
-      ctx.fillStyle = "#58BFFF";
-      ctx.font = "bold 10px Arial";
-      ctx.textAlign = "center";
-      if (laser.axis === "h") ctx.fillText("BRECHA SEGURA", laser.gapCenter, laser.at - 12);
-      else ctx.fillText("BRECHA SEGURA", laser.at + 58, laser.gapCenter);
-    }
   }
 
   function drawHealthHUD() {
@@ -493,7 +834,7 @@
     const y = 64;
     const lifeRadius = 7;
     const spacing = 23;
-    for (let i = 0; i < TUNING.lives; i++) {
+    for (let i = 0; i < TUNING.maxLives; i++) {
       const lifeX = x + lifeRadius + i * spacing;
       ctx.beginPath();
       ctx.arc(lifeX, y, lifeRadius, 0, Math.PI * 2);
@@ -609,6 +950,22 @@
 
     state.merges.forEach(drawMerge);
     state.lasers.forEach(drawLaser);
+    for (const ball of state.pingPongs) {
+      ctx.save();
+      ctx.strokeStyle = "#FF3948";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ball.x - ball.vx * 0.018, ball.y - ball.vy * 0.018);
+      ctx.lineTo(ball.x, ball.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.shadowColor = "#FF3948";
+      ctx.shadowBlur = 18;
+      ctx.fill();
+      ctx.restore();
+    }
     state.saws.forEach(saw => drawSawShape(saw.x, saw.y, saw.r, saw.angle));
 
     if (state.boss) {
@@ -683,33 +1040,89 @@
   }
 
   function launch() {
+    const startLoop = !state.active;
     reset();
-    document.getElementById("mainMenu")?.classList.add("hidden");
-    requestAnimationFrame(frame);
-  }
-
-  function exit() {
-    state.active = false;
-    state.paused = false;
-    keys.clear();
-    state.pointer = null;
-    document.getElementById("mainMenu")?.classList.remove("hidden");
+    hideAllScreens();
+    if (ui.mainMenu) ui.mainMenu.classList.add("hidden");
+    if (ui.pauseButton) ui.pauseButton.style.display = "flex";
+    if (window.ONREDAudio) window.ONREDAudio.playMusic("gameplay");
+    if (startLoop) requestAnimationFrame(frame);
   }
 
   document.getElementById("phaseTwoButton")?.addEventListener("click", launch);
 
+  if (ui.pauseButton) {
+    ui.pauseButton.addEventListener("click", event => {
+      if (!state.active) return;
+      event.preventDefault();
+      pauseGame();
+    });
+  }
+  // Estes botões são compartilhados com a Fase 1. Capturamos o clique
+  // antes dos listeners do runtime principal para impedir ações duplicadas.
+  function bindPhaseTwoAction(element, action) {
+    if (!element) return;
+    element.addEventListener("click", event => {
+      if (!state.active) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      action();
+    }, true);
+  }
+  bindPhaseTwoAction(ui.resumeButton, resumeGame);
+  bindPhaseTwoAction(ui.pauseRestartButton, launch);
+  bindPhaseTwoAction(ui.pauseMenuButton, exit);
+  bindPhaseTwoAction(ui.reviveButton, reviveGame);
+  bindPhaseTwoAction(ui.retryButton, launch);
+  bindPhaseTwoAction(ui.gameOverMenuButton, exit);
+  bindPhaseTwoAction(ui.victoryRetryButton, continueAfterBoss);
+  bindPhaseTwoAction(ui.victoryMenuButton, exit);
+
+  // O botão é compartilhado com a Fase 1. A checagem por coordenada
+  // mantém o comportamento correto mesmo quando o canvas captura outro toque.
+  document.addEventListener("pointerdown", event => {
+    if (!state.active || state.paused || state.over || state.victory || !ui.pauseButton) return;
+    const rect = ui.pauseButton.getBoundingClientRect();
+    const x = event.clientX, y = event.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    pauseGame();
+  }, true);
+
+  // Captura antes do listener global da Fase 1, sem alterar o runtime dela.
   window.addEventListener("keydown", event => {
     if (!state.active) return;
+    if (event.code === "Escape" || event.code === "KeyP") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (state.over || state.victory) {
+        if (event.code === "Escape") exit();
+      } else if (state.paused) {
+        resumeGame();
+      } else {
+        pauseGame();
+      }
+      return;
+    }
+    if (state.paused || state.over || state.victory) {
+      if (event.code === "Enter" && state.over) launch();
+      else if (event.code === "Enter" && state.victory) continueAfterBoss();
+      return;
+    }
     keys.add(event.code);
     if (event.code === "ShiftLeft" || event.code === "ShiftRight") startDash();
-    if (event.code === "Escape") {
-      event.preventDefault();
-      if (state.over || state.victory) exit();
-      else state.paused = !state.paused;
-    }
-    if ((state.over || state.victory) && event.code === "Enter") launch();
-  });
+  }, true);
   window.addEventListener("keyup", event => keys.delete(event.code));
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.active && !state.paused && !state.over && !state.victory) {
+      pauseGame();
+    }
+  });
 
   canvas.addEventListener("pointerdown", event => {
     if (!state.active) return;
@@ -761,6 +1174,11 @@
     getState: () => ({
       ...state,
       saws: state.saws.length,
+      revivesUsed: state.revivesUsed,
+      bossDefeated: state.bossDefeated,
+      postBoss: state.postBoss,
+      effects: { ...state.effects },
+      pingPongs: state.pingPongs.length,
       zones: state.zones.length,
       merges: state.merges.length,
       lasers: state.lasers.length
