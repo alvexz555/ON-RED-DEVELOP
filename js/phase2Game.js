@@ -1251,18 +1251,28 @@
   }
 
   function syncCanvasForPhaseTwo() {
-    // A Fase 2 desenha em coordenadas da viewport. Reaplica a escala
-    // física do Canvas ao entrar, sem herdar a transformação da Fase 1.
-    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+    // Mantém o mesmo referencial de viewport usado pela Fase 1.
+    // Em mobile, a área CSS deve acompanhar innerHeight em pixels,
+    // não 100vh, que pode incluir a área recolhida das barras do navegador.
+    if (window.ONREDWorld && typeof window.ONREDWorld.resize === "function") {
+      window.ONREDWorld.resize();
+    }
+
+    const dpr = Number(window.devicePixelRatio) || 1;
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
 
     canvas.style.position = "fixed";
     canvas.style.left = "0";
     canvas.style.top = "0";
-    canvas.style.width = "100vw";
-    canvas.style.height = "100vh";
+    canvas.style.zIndex = "0";
+    canvas.style.pointerEvents = "auto";
     canvas.style.display = "block";
+    canvas.style.margin = "0";
+    canvas.style.padding = "0";
+    // Igual à Fase 1: dimensões explícitas da viewport, sem 100vw/100vh.
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
 
     const pixelWidth = Math.round(width * dpr);
     const pixelHeight = Math.round(height * dpr);
