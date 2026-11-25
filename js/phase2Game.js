@@ -36,6 +36,8 @@
     bossTriggerSeconds: 105,
     bossHP: 1200,
     bossDashDamage: 200,
+    bossNormalDashDamage: 40,
+    chargedDashReach: 48,
     bossDashWarning: 0.85,
     bossDashCooldown: 3.8,
     bossDashSpeed: 1050,
@@ -81,7 +83,7 @@
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
-    energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false,
+    energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
@@ -182,6 +184,7 @@
     state.dashCooldown = 0;
     state.dashTime = 0;
     state.dashCharged = false;
+    state.bossDashHit = false;
     state.invuln = 1.2;
     state.shieldHitsRemaining = 0;
     state.x = innerWidth / 2;
@@ -579,6 +582,7 @@
         state.dashCooldown > 0 || state.energy < TUNING.dashCost) return false;
 
     state.dashCharged = state.energy >= TUNING.maxEnergy;
+    state.bossDashHit = false;
     state.energy = Math.max(0, state.energy - TUNING.dashCost);
     state.dashTime = TUNING.dashDuration;
     state.dashCooldown = TUNING.dashCooldown;
@@ -705,7 +709,8 @@
         saw.x += dx / length * saw.speed * dt;
         saw.y += dy / length * saw.speed * dt;
       }
-      const collisionRadius = saw.r + TUNING.playerRadius;
+      const collisionRadius = saw.r + TUNING.playerRadius +
+        (dashActiveThisFrame && state.dashCharged ? TUNING.chargedDashReach : 0);
       const sweptDashHit = dashActiveThisFrame &&
         segmentDistanceSquared(
           0, 0,
@@ -766,7 +771,7 @@
     }
   }
 
-  function updateBoss(dt) {
+  function updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame) {
     if (!state.boss) return;
     const boss = state.boss;
     boss.angle += dt * 1.15;
@@ -828,13 +833,30 @@
       }
     }
 
-    if (state.dashTime > 0 && state.dashCharged &&
-        circleHit(boss, boss.r + 5, state, TUNING.playerRadius + 4)) {
-      state.dashCharged = false;
-      state.energy = 0;
-      boss.hp = Math.max(0, boss.hp - TUNING.bossDashDamage);
-      state.message = "DASH ELÉTRICO · -200 BOSS HP";
-      state.messageTimer = 1.1;
+    // Colisão contínua: verifica todo o trajeto da bola neste frame,
+    // evitando que um DASH rápido atravesse o boss sem registrar impacto.
+    const sweptBossHit = dashActiveThisFrame && segmentDistanceSquared(
+      0, 0,
+      previousPlayerX - boss.x,
+      previousPlayerY - boss.y,
+      state.x - boss.x,
+      state.y - boss.y
+    ) <= Math.pow(boss.r + TUNING.playerRadius +
+      (state.dashCharged ? TUNING.chargedDashReach : 0), 2);
+
+    if (sweptBossHit && !state.bossDashHit) {
+      state.bossDashHit = true;
+      const charged = state.dashCharged;
+      const dealt = charged ? TUNING.bossDashDamage : TUNING.bossNormalDashDamage;
+      boss.hp = Math.max(0, boss.hp - dealt);
+      if (charged) {
+        state.dashCharged = false;
+        state.energy = 0;
+        state.message = "DASH 100% · IMPACTO AMPLIADO · -" + dealt + " BOSS HP";
+      } else {
+        state.message = "DASH · -" + dealt + " BOSS HP";
+      }
+      state.messageTimer = 1.2;
       if (boss.hp <= 0) {
         state.bossDefeated = true;
         state.victory = true;
@@ -939,7 +961,7 @@
     updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
     updateLasers(dt);
     if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
-    if (state.effects.freeze <= 0) updateBoss(dt);
+    if (state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
