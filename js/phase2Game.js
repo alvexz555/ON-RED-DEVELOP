@@ -85,6 +85,7 @@
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
     bossImpactTimer: 0, bossImpactX: 0, bossImpactY: 0,
+    overloadTimer: 0,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
@@ -583,6 +584,7 @@
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
+        state.overloadTimer = 1.8;
         // A perda de uma vida não teleporta o jogador: preserva a posição
         // exata do impacto e interrompe somente o movimento.
         state.vx = 0;
@@ -922,6 +924,7 @@
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
     state.bossImpactTimer = Math.max(0, state.bossImpactTimer - dt);
+    state.overloadTimer = Math.max(0, state.overloadTimer - dt);
     // Snapshot no início do frame: não perder a colisão no último frame
     // quando o contador do DASH chega a zero durante este dt.
     const dashActiveThisFrame = state.dashTime > 0;
@@ -1232,6 +1235,62 @@
     }
     state.saws.forEach(saw => drawSawShape(saw.x, saw.y, saw.r, saw.angle));
 
+    // SOBRECARGA: descarga vermelha durante a pausa após perder uma vida.
+    if (state.overloadTimer > 0) {
+      const progress = 1 - state.overloadTimer / 1.8;
+      const pulse = 1 + Math.sin(state.time * 42) * 0.13;
+      const fade = 0.72 + Math.sin(state.time * 27) * 0.2;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const glow = ctx.createRadialGradient(state.x, state.y, 5, state.x, state.y, 88 * pulse);
+      glow.addColorStop(0, "rgba(255,245,245,.95)");
+      glow.addColorStop(0.2, "rgba(255,35,48,.72)");
+      glow.addColorStop(0.62, "rgba(220,0,24,.25)");
+      glow.addColorStop(1, "rgba(180,0,20,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, 88 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, 31 + Math.sin(state.time * 34) * 5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,70,80," + fade + ")";
+      ctx.lineWidth = 4 + Math.sin(state.time * 39) * 1.5;
+      ctx.shadowColor = "#FF1028";
+      ctx.shadowBlur = 28;
+      ctx.stroke();
+      // Raios irregulares, com ramificações e comprimento variável.
+      for (let bolt = 0; bolt < 14; bolt++) {
+        const angle = bolt * Math.PI * 2 / 14 + Math.sin(state.time * 18 + bolt) * 0.22;
+        const length = 48 + 32 * (0.5 + 0.5 * Math.sin(state.time * 31 + bolt * 2.7));
+        const segments = 5;
+        let px = state.x + Math.cos(angle) * 25;
+        let py = state.y + Math.sin(angle) * 25;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        for (let p = 1; p <= segments; p++) {
+          const distance = 25 + (length - 25) * p / segments;
+          const jitter = p === segments ? 0 : Math.sin(state.time * 47 + bolt * 9 + p * 4) * 13;
+          px = state.x + Math.cos(angle) * distance + Math.cos(angle + Math.PI / 2) * jitter;
+          py = state.y + Math.sin(angle) * distance + Math.sin(angle + Math.PI / 2) * jitter;
+          ctx.lineTo(px, py);
+        }
+        ctx.strokeStyle = bolt % 3 === 0 ? "#FFFFFF" : (bolt % 2 ? "#FF263D" : "#FF6470");
+        ctx.lineWidth = bolt % 3 === 0 ? 3.5 : 2.5;
+        ctx.shadowColor = "#FF001E";
+        ctx.shadowBlur = 22;
+        ctx.stroke();
+        if (bolt % 3 === 0) {
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(px + Math.cos(angle + 0.8) * 17, py + Math.sin(angle + 0.8) * 17);
+          ctx.strokeStyle = "#FF263D";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     // DASH 100%: campo elétrico, arcos ramificados e rastro de energia.
     if (state.dashTime > 0 && state.dashCharged) {
       const t = state.time * 34;
@@ -1352,7 +1411,8 @@
     ctx.beginPath();
     ctx.arc(state.x, state.y, TUNING.playerRadius, 0, Math.PI * 2);
     const colorRatio = clamp(state.energy / TUNING.maxEnergy, 0, 1);
-    ctx.fillStyle = state.shieldHitsRemaining > 0 ? "#168BFF" : "rgb(255," +
+    ctx.fillStyle = state.overloadTimer > 0 ? (Math.sin(state.time * 38) > 0 ? "#FFFFFF" : "#FF1832") :
+      state.shieldHitsRemaining > 0 ? "#168BFF" : "rgb(255," +
       Math.round(107 + (255 - 107) * colorRatio) + "," +
       Math.round(112 + (255 - 112) * colorRatio) + ")";
     ctx.shadowColor = state.shieldHitsRemaining > 0 ? "#58BFFF" : ctx.fillStyle;
