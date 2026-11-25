@@ -859,6 +859,35 @@
     } else if (boss.dashState === "charging") {
       boss.x += boss.dashVX * dt;
       boss.y += boss.dashVY * dt;
+
+      // Ao tocar uma parede durante o DASH, o boss ricocheteia imediatamente
+      // em uma nova direção aleatória voltada para dentro da arena. Sem aviso.
+      const hitLeft = boss.x < boss.r;
+      const hitRight = boss.x > innerWidth - boss.r;
+      const hitTop = boss.y < boss.r;
+      const hitBottom = boss.y > innerHeight - boss.r;
+      if (hitLeft || hitRight || hitTop || hitBottom) {
+        boss.x = clamp(boss.x, boss.r, innerWidth - boss.r);
+        boss.y = clamp(boss.y, boss.r, innerHeight - boss.r);
+
+        let minAngle = 0;
+        let maxAngle = Math.PI * 2;
+        if (hitLeft) { minAngle = -Math.PI / 2; maxAngle = Math.PI / 2; }
+        else if (hitRight) { minAngle = Math.PI / 2; maxAngle = Math.PI * 1.5; }
+        else if (hitTop) { minAngle = 0; maxAngle = Math.PI; }
+        else if (hitBottom) { minAngle = Math.PI; maxAngle = Math.PI * 2; }
+
+        // Em cantos, direciona para o centro para evitar escolher um vetor externo.
+        if ((hitLeft || hitRight) && (hitTop || hitBottom)) {
+          const towardCenter = Math.atan2(innerHeight / 2 - boss.y, innerWidth / 2 - boss.x);
+          minAngle = towardCenter - Math.PI / 3;
+          maxAngle = towardCenter + Math.PI / 3;
+        }
+        const angle = minAngle + Math.random() * (maxAngle - minAngle);
+        boss.dashVX = Math.cos(angle) * TUNING.bossDashSpeed;
+        boss.dashVY = Math.sin(angle) * TUNING.bossDashSpeed;
+      }
+
       boss.dashTimer -= dt;
       if (!boss.dashHit && circleHit(boss, boss.r, state, TUNING.playerRadius)) {
         boss.dashHit = true;
@@ -867,12 +896,9 @@
           damage(30, "IMPACTO DO BOSS · -30 HP");
         }
       }
-      if (boss.dashTimer <= 0 || boss.x < -boss.r || boss.x > innerWidth + boss.r ||
-          boss.y < -boss.r || boss.y > innerHeight + boss.r) {
+      if (boss.dashTimer <= 0) {
         boss.dashState = "recovery";
         boss.dashTimer = 0.72;
-        boss.x = clamp(boss.x, boss.r, innerWidth - boss.r);
-        boss.y = clamp(boss.y, boss.r, innerHeight - boss.r);
       }
     } else if (boss.dashState === "recovery") {
       boss.dashTimer -= dt;
