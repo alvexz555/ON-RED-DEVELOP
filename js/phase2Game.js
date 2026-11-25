@@ -517,6 +517,20 @@
     return dx * dx + dy * dy;
   }
 
+  function segmentCircleFirstHitT(ax, ay, bx, by, radius) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const a = dx * dx + dy * dy;
+    const c = ax * ax + ay * ay - radius * radius;
+    if (c <= 0) return 0;
+    if (a <= 0) return null;
+    const b = 2 * (ax * dx + ay * dy);
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) return null;
+    const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+    return t >= 0 && t <= 1 ? t : null;
+  }
+
   function updatePingPongs(dt) {
     if (state.effects.freeze > 0) return;
     for (const ball of state.pingPongs) {
@@ -845,19 +859,30 @@
       }
     }
 
-    // Colisão contínua: verifica todo o trajeto da bola neste frame,
-    // evitando que um DASH rápido atravesse o boss sem registrar impacto.
-    const sweptBossHit = dashActiveThisFrame && segmentDistanceSquared(
-      0, 0,
-      previousPlayerX - previousBossX,
-      previousPlayerY - previousBossY,
-      state.x - boss.x,
-      state.y - boss.y
-    ) <= Math.pow(boss.r + TUNING.playerRadius +
-      (state.dashCharged ? TUNING.chargedDashReach : 0), 2);
+    // Colisão contínua real: calcula o primeiro instante em que o trajeto
+    // relativo jogador/boss cruza o círculo de colisão. Ao tocar, interrompe
+    // o DASH no ponto de contato, em vez de apenas registrar o dano.
+    const bossHitRadius = boss.r + TUNING.playerRadius +
+      (state.dashCharged ? TUNING.chargedDashReach : 0);
+    const hitT = dashActiveThisFrame && !state.bossDashHit
+      ? segmentCircleFirstHitT(
+          previousPlayerX - previousBossX,
+          previousPlayerY - previousBossY,
+          state.x - boss.x,
+          state.y - boss.y,
+          bossHitRadius
+        )
+      : null;
 
-    if (sweptBossHit && !state.bossDashHit) {
+
+    if (hitT !== null) {
       state.bossDashHit = true;
+      // Reposiciona no primeiro ponto de contato para nunca atravessar o boss.
+      state.x = previousPlayerX + (state.x - previousPlayerX) * hitT;
+      state.y = previousPlayerY + (state.y - previousPlayerY) * hitT;
+      state.vx = 0;
+      state.vy = 0;
+      state.dashTime = 0;
       if (state.dashCharged) {
         // Explosão elétrica radial no contato do golpe carregado.
         state.bossImpactFlash = 0.42;
