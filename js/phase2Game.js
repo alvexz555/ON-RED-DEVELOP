@@ -774,6 +774,8 @@
   function updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame) {
     if (!state.boss) return;
     const boss = state.boss;
+    const previousBossX = boss.x;
+    const previousBossY = boss.y;
     boss.angle += dt * 1.15;
     const dx = state.x - boss.x;
     const dy = state.y - boss.y;
@@ -837,8 +839,8 @@
     // evitando que um DASH rápido atravesse o boss sem registrar impacto.
     const sweptBossHit = dashActiveThisFrame && segmentDistanceSquared(
       0, 0,
-      previousPlayerX - boss.x,
-      previousPlayerY - boss.y,
+      previousPlayerX - previousBossX,
+      previousPlayerY - previousBossY,
       state.x - boss.x,
       state.y - boss.y
     ) <= Math.pow(boss.r + TUNING.playerRadius +
