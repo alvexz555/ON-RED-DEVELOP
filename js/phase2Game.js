@@ -84,6 +84,7 @@
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
+    bossImpactTimer: 0, bossImpactX: 0, bossImpactY: 0,
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
@@ -884,8 +885,8 @@
       state.vy = 0;
       state.dashTime = 0;
       if (state.dashCharged) {
-        // Explosão elétrica radial no contato do golpe carregado.
-        state.bossImpactFlash = 0.42;
+        // O efeito persiste depois que o DASH termina e a carga é consumida.
+        state.bossImpactTimer = 0.72;
         state.bossImpactX = boss.x;
         state.bossImpactY = boss.y;
       }
@@ -920,6 +921,7 @@
     state.score += dt * 100;
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
+    state.bossImpactTimer = Math.max(0, state.bossImpactTimer - dt);
     // Snapshot no início do frame: não perder a colisão no último frame
     // quando o contador do DASH chega a zero durante este dt.
     const dashActiveThisFrame = state.dashTime > 0;
@@ -1292,6 +1294,47 @@
       ctx.font = "bold 11px Arial";
       ctx.textAlign = "center";
       ctx.fillText("SERRA GIGANTE", w / 2, 15);
+    }
+
+    // Efeito de impacto renderizado DEPOIS do boss para não ficar escondido
+    // pela serra. Continua visível mesmo após consumir o DASH 100%.
+    if (state.bossImpactTimer > 0) {
+      const progress = 1 - state.bossImpactTimer / 0.72;
+      const fade = 1 - progress;
+      const radius = 28 + progress * 118;
+      const pulse = 1 + Math.sin(state.time * 70) * 0.08;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const flash = ctx.createRadialGradient(state.bossImpactX, state.bossImpactY, 2,
+        state.bossImpactX, state.bossImpactY, radius * pulse);
+      flash.addColorStop(0, "rgba(255,255,255," + (0.9 * fade) + ")");
+      flash.addColorStop(0.22, "rgba(54,215,255," + (0.58 * fade) + ")");
+      flash.addColorStop(1, "rgba(22,139,255,0)");
+      ctx.fillStyle = flash;
+      ctx.beginPath();
+      ctx.arc(state.bossImpactX, state.bossImpactY, radius * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(state.bossImpactX, state.bossImpactY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(190,248,255," + fade + ")";
+      ctx.lineWidth = 7 * fade + 1;
+      ctx.shadowColor = "#36D7FF";
+      ctx.shadowBlur = 30;
+      ctx.stroke();
+      for (let bolt = 0; bolt < 12; bolt++) {
+        const angle = bolt * Math.PI / 6 + state.time * 3;
+        const inner = 18 + progress * 28;
+        const outer = radius * (0.72 + 0.18 * Math.sin(state.time * 45 + bolt));
+        ctx.beginPath();
+        ctx.moveTo(state.bossImpactX + Math.cos(angle) * inner,
+          state.bossImpactY + Math.sin(angle) * inner);
+        ctx.lineTo(state.bossImpactX + Math.cos(angle + 0.12) * outer,
+          state.bossImpactY + Math.sin(angle + 0.12) * outer);
+        ctx.strokeStyle = bolt % 2 ? "rgba(255,255,255," + fade + ")" : "rgba(54,215,255," + fade + ")";
+        ctx.lineWidth = bolt % 2 ? 3 : 5;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     if (state.dashTime > 0 && state.dashCharged) {
