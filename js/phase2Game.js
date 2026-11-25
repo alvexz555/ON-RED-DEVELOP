@@ -669,7 +669,7 @@
     state.knockbackTime = 0.22;
   }
 
-  function updateSaws(dt, previousPlayerX, previousPlayerY) {
+  function updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame) {
     if (state.effects.freeze > 0) return;
     const desired = desiredSawCount();
 
@@ -706,7 +706,7 @@
         saw.y += dy / length * saw.speed * dt;
       }
       const collisionRadius = saw.r + TUNING.playerRadius;
-      const sweptDashHit = state.dashTime > 0 &&
+      const sweptDashHit = dashActiveThisFrame &&
         segmentDistanceSquared(
           0, 0,
           previousPlayerX - previousSawX,
@@ -714,16 +714,19 @@
           state.x - saw.x,
           state.y - saw.y
         ) <= collisionRadius * collisionRadius;
-      const touchingPlayer = state.dashTime > 0
+      const touchingPlayer = dashActiveThisFrame
         ? sweptDashHit
         : circleHit(saw, saw.r, state, TUNING.playerRadius);
       if (touchingPlayer) {
-        if (state.effects.ghost > 0) continue;
-        if (state.dashTime > 0) {
+        // DASH sempre destrói a serra no contato, inclusive durante o efeito ghost.
+        // Ghost só evita dano no movimento normal; não pode cancelar o ataque.
+        if (dashActiveThisFrame) {
           saw.hp = 0;
           state.message = "SERRA DESTRUÍDA";
           state.messageTimer = 0.8;
           sawKillsThisFrame++;
+        } else if (state.effects.ghost > 0) {
+          continue;
         } else {
           if (state.invuln <= 0) applyKnockback(saw.x, saw.y, TUNING.sawKnockback);
           damage(TUNING.sawDamage, "SERRA · -20 HP");
@@ -852,6 +855,9 @@
     state.score += dt * 100;
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
+    // Snapshot no início do frame: não perder a colisão no último frame
+    // quando o contador do DASH chega a zero durante este dt.
+    const dashActiveThisFrame = state.dashTime > 0;
     state.dashTime = Math.max(0, state.dashTime - dt);
     button.flash = Math.max(0, button.flash - dt);
     state.messageTimer = Math.max(0, state.messageTimer - dt);
@@ -870,13 +876,13 @@
     }
     if (state.effects.invert > 0) { ix *= -1; iy *= -1; }
     const inputLength = Math.hypot(ix, iy) || 1;
-    if (state.dashTime <= 0 && state.knockbackTime <= 0) {
+    if (!dashActiveThisFrame && state.knockbackTime <= 0) {
       state.vx = (ix / inputLength) * TUNING.playerSpeed;
       state.vy = (iy / inputLength) * TUNING.playerSpeed;
     }
     state.x = clamp(state.x + state.vx * dt, TUNING.playerRadius, innerWidth - TUNING.playerRadius);
     state.y = clamp(state.y + state.vy * dt, TUNING.playerRadius, innerHeight - TUNING.playerRadius);
-    if (state.dashTime <= 0) {
+    if (!dashActiveThisFrame) {
       if (state.knockbackTime > 0) {
         state.knockbackTime = Math.max(0, state.knockbackTime - dt);
         const damping = Math.pow(0.035, dt);
@@ -930,7 +936,7 @@
     state.merges = state.merges.filter(orb => orb.life > 0);
 
     updatePingPongs(dt);
-    updateSaws(dt, previousPlayerX, previousPlayerY);
+    updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
     updateLasers(dt);
     if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
     if (state.effects.freeze <= 0) updateBoss(dt);
