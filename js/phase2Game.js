@@ -484,7 +484,7 @@
       const dx = targetX - x, dy = targetY - y;
       const length = Math.hypot(dx, dy) || 1;
       state.pingPongs.push({ x, y, vx: dx / length * TUNING.pingPongSpeed,
-        vy: dy / length * TUNING.pingPongSpeed, r: 9, life: 2.5 });
+        vy: dy / length * TUNING.pingPongSpeed, r: 9, life: 5, bounces: 0, maxBounces: 8 });
       state.message = "PING PONG FANTASMA · PERIGO";
       state.messageTimer = 1.4;
       return "pingpong";
@@ -536,28 +536,66 @@
   function updatePingPongs(dt) {
     if (state.effects.freeze > 0) return;
     for (const ball of state.pingPongs) {
-      const oldX = ball.x, oldY = ball.y;
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
       ball.life -= dt;
-      // Intercepta a Serra Gigante pelo segmento percorrido pela bola.
-      if (state.boss) {
-        const bossRadius = ball.r + state.boss.r;
-        if (segmentDistanceSquared(state.boss.x, state.boss.y, oldX, oldY, ball.x, ball.y) <= bossRadius * bossRadius) {
+      // Subpassos curtos mantêm a colisão precisa mesmo em alta velocidade
+      // e permitem refletir a trajetória nas quatro paredes da arena.
+      const distanceToTravel = Math.hypot(ball.vx, ball.vy) * dt;
+      const steps = Math.max(1, Math.ceil(distanceToTravel / 7));
+      const stepDt = dt / steps;
+      for (let step = 0; step < steps && ball.life > 0; step++) {
+        const oldX = ball.x, oldY = ball.y;
+        ball.x += ball.vx * stepDt;
+        ball.y += ball.vy * stepDt;
+        let bounced = false;
+        const minX = ball.r, maxX = innerWidth - ball.r;
+        const minY = ball.r, maxY = innerHeight - ball.r;
+        if (ball.x < minX) {
+          ball.x = minX;
+          ball.vx = Math.abs(ball.vx);
+          bounced = true;
+        } else if (ball.x > maxX) {
+          ball.x = maxX;
+          ball.vx = -Math.abs(ball.vx);
+          bounced = true;
+        }
+        if (ball.y < minY) {
+          ball.y = minY;
+          ball.vy = Math.abs(ball.vy);
+          bounced = true;
+        } else if (ball.y > maxY) {
+          ball.y = maxY;
+          ball.vy = -Math.abs(ball.vy);
+          bounced = true;
+        }
+        if (bounced) {
+          ball.bounces = (ball.bounces || 0) + 1;
+          ball.flash = 0.12;
+          if (ball.bounces >= (ball.maxBounces || 8)) {
+            ball.life = 0;
+            break;
+          }
+        }
+        ball.flash = Math.max(0, (ball.flash || 0) - stepDt);
+
+        // A bola também é interceptada pelo boss em qualquer subpasso.
+        if (state.boss) {
+          const bossRadius = ball.r + state.boss.r;
+          if (segmentDistanceSquared(state.boss.x, state.boss.y, oldX, oldY, ball.x, ball.y) <= bossRadius * bossRadius) {
+            ball.life = 0;
+            state.message = "PING PONG · BLOQUEADO PELA SERRA";
+            state.messageTimer = 0.7;
+            break;
+          }
+        }
+        const hitRadius = ball.r + TUNING.playerRadius;
+        if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
+          damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP", true);
           ball.life = 0;
-          state.message = "PING PONG · BLOQUEADO PELA SERRA";
-          state.messageTimer = 0.7;
-          continue;
+          break;
         }
       }
-      const hitRadius = ball.r + TUNING.playerRadius;
-      if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
-        damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP", true);
-        ball.life = 0;
-      }
     }
-    state.pingPongs = state.pingPongs.filter(ball => ball.life > 0 &&
-      ball.x > -40 && ball.x < innerWidth + 40 && ball.y > -40 && ball.y < innerHeight + 40);
+    state.pingPongs = state.pingPongs.filter(ball => ball.life > 0);
   }
 
   function damage(amount, message = "IMPACTO", bypassInvulnerability = false) {
@@ -1225,11 +1263,18 @@
       ctx.moveTo(ball.x - ball.vx * 0.018, ball.y - ball.vy * 0.018);
       ctx.lineTo(ball.x, ball.y);
       ctx.stroke();
+      if (ball.bounces > 0) {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r + 5 + Math.sin(state.time * 45) * 2, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,65,82,.8)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
       ctx.fillStyle = "#FFFFFF";
       ctx.shadowColor = "#FF3948";
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = ball.flash > 0 ? 28 : 18;
       ctx.fill();
       ctx.restore();
     }
