@@ -48,7 +48,7 @@
     inversionDuration: 3,
     freezeDuration: 3,
     pingPongDamage: 50,
-    pingPongSpeed: 2600
+    pingPongSpeed: 950
   });
 
   const keys = new Set();
@@ -477,14 +477,15 @@
       const side = Math.floor(Math.random() * 4);
       const targetX = state.x, targetY = state.y;
       let x = 0, y = 0;
-      if (side === 0) { x = -18; y = rand(0, innerHeight); }
-      else if (side === 1) { x = innerWidth + 18; y = rand(0, innerHeight); }
-      else if (side === 2) { x = rand(0, innerWidth); y = -18; }
-      else { x = rand(0, innerWidth); y = innerHeight + 18; }
+      const radius = 11;
+      if (side === 0) { x = radius; y = rand(radius, innerHeight - radius); }
+      else if (side === 1) { x = innerWidth - radius; y = rand(radius, innerHeight - radius); }
+      else if (side === 2) { x = rand(radius, innerWidth - radius); y = radius; }
+      else { x = rand(radius, innerWidth - radius); y = innerHeight - radius; }
       const dx = targetX - x, dy = targetY - y;
       const length = Math.hypot(dx, dy) || 1;
       state.pingPongs.push({ x, y, vx: dx / length * TUNING.pingPongSpeed,
-        vy: dy / length * TUNING.pingPongSpeed, r: 9, life: 5, bounces: 0, maxBounces: 8 });
+        vy: dy / length * TUNING.pingPongSpeed, r: radius, life: 7, bounces: 0, maxBounces: 12 });
       state.message = "PING PONG FANTASMA · PERIGO";
       state.messageTimer = 1.4;
       return "pingpong";
@@ -1257,24 +1258,28 @@
     state.lasers.forEach(drawLaser);
     for (const ball of state.pingPongs) {
       ctx.save();
-      ctx.strokeStyle = "#FF3948";
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#FF263F";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.shadowColor = "#FF263F";
+      ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.moveTo(ball.x - ball.vx * 0.018, ball.y - ball.vy * 0.018);
+      ctx.moveTo(ball.x - ball.vx * 0.045, ball.y - ball.vy * 0.045);
       ctx.lineTo(ball.x, ball.y);
       ctx.stroke();
-      if (ball.bounces > 0) {
+      if (ball.bounces > 0 || ball.flash > 0) {
         ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.r + 5 + Math.sin(state.time * 45) * 2, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255,65,82,.8)";
-        ctx.lineWidth = 2;
+        ctx.arc(ball.x, ball.y, ball.r + 8 + Math.sin(state.time * 38) * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,65,82,.95)";
+        ctx.lineWidth = ball.flash > 0 ? 4 : 2.5;
+        ctx.shadowBlur = 24;
         ctx.stroke();
       }
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
       ctx.fillStyle = "#FFFFFF";
-      ctx.shadowColor = "#FF3948";
-      ctx.shadowBlur = ball.flash > 0 ? 28 : 18;
+      ctx.shadowColor = "#FF263F";
+      ctx.shadowBlur = ball.flash > 0 ? 34 : 25;
       ctx.fill();
       ctx.restore();
     }
