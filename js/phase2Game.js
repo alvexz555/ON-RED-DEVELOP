@@ -524,6 +524,16 @@
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.life -= dt;
+      // Intercepta a Serra Gigante pelo segmento percorrido pela bola.
+      if (state.boss) {
+        const bossRadius = ball.r + state.boss.r;
+        if (segmentDistanceSquared(state.boss.x, state.boss.y, oldX, oldY, ball.x, ball.y) <= bossRadius * bossRadius) {
+          ball.life = 0;
+          state.message = "PING PONG · BLOQUEADO PELA SERRA";
+          state.messageTimer = 0.7;
+          continue;
+        }
+      }
       const hitRadius = ball.r + TUNING.playerRadius;
       if (segmentDistanceSquared(state.x, state.y, oldX, oldY, ball.x, ball.y) <= hitRadius * hitRadius) {
         damage(TUNING.pingPongDamage, "PING PONG FANTASMA · -50 HP", true);
@@ -848,6 +858,12 @@
 
     if (sweptBossHit && !state.bossDashHit) {
       state.bossDashHit = true;
+      if (state.dashCharged) {
+        // Explosão elétrica radial no contato do golpe carregado.
+        state.bossImpactFlash = 0.42;
+        state.bossImpactX = boss.x;
+        state.bossImpactY = boss.y;
+      }
       const charged = state.dashCharged;
       const dealt = charged ? TUNING.bossDashDamage : TUNING.bossNormalDashDamage;
       boss.hp = Math.max(0, boss.hp - dealt);
@@ -1189,6 +1205,45 @@
     }
     state.saws.forEach(saw => drawSawShape(saw.x, saw.y, saw.r, saw.angle));
 
+    // DASH 100%: campo elétrico, arcos ramificados e rastro de energia.
+    if (state.dashTime > 0 && state.dashCharged) {
+      const t = state.time * 34;
+      const pulse = 1 + Math.sin(t * 0.7) * 0.12;
+      const dir = Math.atan2(state.vy, state.vx);
+      ctx.save();
+      ctx.translate(state.x, state.y);
+      ctx.rotate(dir);
+      ctx.globalCompositeOperation = "lighter";
+      const aura = ctx.createRadialGradient(0, 0, 4, 0, 0, 62 * pulse);
+      aura.addColorStop(0, "rgba(255,255,255,.95)");
+      aura.addColorStop(0.22, "rgba(54,215,255,.72)");
+      aura.addColorStop(1, "rgba(22,139,255,0)");
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, 0, 62 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      for (let bolt = 0; bolt < 8; bolt++) {
+        const angle = bolt * Math.PI / 4 + Math.sin(t + bolt) * 0.18;
+        const length = 35 + 22 * Math.sin(t * 0.8 + bolt * 2);
+        ctx.save();
+        ctx.rotate(angle - dir);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        for (let p = 1; p <= 5; p++) {
+          const x = length * p / 5;
+          const y = (Math.sin(t + bolt * 7 + p * 2.4) * 9) * (p === 5 ? 0.3 : 1);
+          ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = bolt % 2 ? "#FFFFFF" : "#45E8FF";
+        ctx.lineWidth = bolt % 2 ? 2.5 : 4;
+        ctx.shadowColor = "#36D7FF";
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
     if (state.boss) {
       const boss = state.boss;
       if (boss.dashState === "warning") {
@@ -1214,6 +1269,18 @@
       ctx.fillText("SERRA GIGANTE", w / 2, 15);
     }
 
+    if (state.dashTime > 0 && state.dashCharged) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, 25 + Math.sin(state.time * 55) * 4, 0, Math.PI * 2);
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 3;
+      ctx.shadowColor = "#36D7FF";
+      ctx.shadowBlur = 25;
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.beginPath();
     ctx.arc(state.x, state.y, TUNING.playerRadius, 0, Math.PI * 2);
     const colorRatio = clamp(state.energy / TUNING.maxEnergy, 0, 1);
