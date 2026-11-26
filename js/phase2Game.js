@@ -213,7 +213,8 @@
     updateButtonPosition();
     for (let i = 0; i < TUNING.initialSaws; i++) spawnSaw();
     try {
-      state.best = Number(localStorage.getItem("onRedPhase2Best") || 0) || 0;
+      const mode = window.ONREDGameMode && window.ONREDGameMode.mode === "training" ? "training" : "original";
+      state.best = Number(localStorage.getItem(mode === "training" ? "onRedTrainingPhase2Best" : "onRedOriginalPhase2Best") || 0) || 0;
     } catch (_) {
       state.best = 0;
     }
@@ -247,7 +248,8 @@
     const score = Math.floor(state.score);
     if (score <= state.best) return;
     state.best = score;
-    try { localStorage.setItem("onRedPhase2Best", String(score)); } catch (_) {}
+    const mode = window.ONREDGameMode && window.ONREDGameMode.mode === "training" ? "training" : "original";
+    try { localStorage.setItem(mode === "training" ? "onRedTrainingPhase2Best" : "onRedOriginalPhase2Best", String(score)); } catch (_) {}
   }
 
   function updateReviveOffer() {
@@ -292,6 +294,7 @@
     if (state.victoryShown) return;
     state.victoryShown = true;
     saveBestScore();
+    if (window.ONREDModeManager && window.ONREDModeManager.handlePhaseVictory(2)) return;
     if (ui.pauseButton) ui.pauseButton.style.display = "none";
     hideScreen(ui.pauseScreen);
     if (ui.victoryFinalScore) ui.victoryFinalScore.textContent = String(Math.floor(state.score)).padStart(6, "0");
@@ -1593,7 +1596,6 @@
     if (startLoop) requestAnimationFrame(frame);
   }
 
-  document.getElementById("phaseTwoButton")?.addEventListener("click", launch);
 
   if (ui.pauseButton) {
     ui.pauseButton.addEventListener("click", event => {
