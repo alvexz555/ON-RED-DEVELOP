@@ -34,9 +34,9 @@
         // O recorde antigo era global. Preserva-o como recorde do modo
         // Original da Fase 1, sem sobrescrever um recorde já existente.
         try {
-            if (localStorage.getItem(RECORD_KEYS.originalPhase1) !== null) return;
             const legacy = Number(localStorage.getItem("onRedBestScore") || 0);
-            if (Number.isFinite(legacy) && legacy > 0) {
+            const current = Number(localStorage.getItem(RECORD_KEYS.originalPhase1) || 0);
+            if (Number.isFinite(legacy) && legacy > current && legacy > 0) {
                 localStorage.setItem(RECORD_KEYS.originalPhase1, String(Math.floor(legacy)));
             }
         } catch (error) {
