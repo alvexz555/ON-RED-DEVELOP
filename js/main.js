@@ -912,6 +912,39 @@ function updatePerfectObstacles(deltaTime, timerDeltaTime = deltaTime) {
 }
 
 // ==========================================
+// PROVOCAÇÃO DINÂMICA DA TELA DE DERROTA
+// ==========================================
+
+const gameOverTaunts = [
+    { title: "JÁ ACABOU?", subtitle: "Você chegou até aqui. Vai parar agora?" },
+    { title: "ISSO FOI TUDO?", subtitle: "O ON RED ainda não terminou com você." },
+    { title: "QUASE...", subtitle: "Faltou pouco. Mas pouco não conta." },
+    { title: "VAI DEIXAR ASSIM?", subtitle: "Tem certeza de que essa foi sua última tentativa?" },
+    { title: "AINDA TÁ AÍ?", subtitle: "Respira. Você ainda pode voltar." },
+    { title: "MAIS UMA?", subtitle: "A próxima partida pode mudar tudo." }
+];
+let lastGameOverTauntIndex = -1;
+
+function setGameOverTaunt() {
+    const title = document.getElementById("gameOverTitle");
+    const subtitle = document.getElementById("gameOverSubtitle");
+    if (!title || !subtitle) return;
+
+    let index = Math.floor(Math.random() * gameOverTaunts.length);
+    if (gameOverTaunts.length > 1 && index === lastGameOverTauntIndex) {
+        index = (index + 1 + Math.floor(Math.random() * (gameOverTaunts.length - 1))) % gameOverTaunts.length;
+    }
+    lastGameOverTauntIndex = index;
+
+    const taunt = gameOverTaunts[index];
+    title.textContent = taunt.title;
+    title.setAttribute("data-text", taunt.title);
+    subtitle.textContent = taunt.subtitle;
+}
+
+window.ONREDSetGameOverTaunt = setGameOverTaunt;
+
+// ==========================================
 // GAME OVER
 // ==========================================
 
@@ -924,6 +957,7 @@ function triggerGameOver() {
         window.ONREDAudio.stopMusic();
         window.ONREDAudio.play("gameOver");
     }
+    setGameOverTaunt();
     updateReviveOffer();
     if (pauseButton) pauseButton.style.display = "none";
 
