@@ -964,6 +964,8 @@ function triggerVictory() {
         : 5000;
     const finalScore = Math.floor(scoreState.value + bonus);
 
+    if (window.ONREDModeManager && window.ONREDModeManager.handlePhaseVictory(1)) return;
+
     scoreState.value = finalScore;
 
     saveBestScore(finalScore);
@@ -1780,6 +1782,9 @@ function resetGame() {
 window.startONREDGame = function () {
 
     if (gameStarted) return;
+    const mode = window.ONREDGameMode && window.ONREDGameMode.mode === "training" ? "training" : "original";
+    scoreState.storageKey = mode === "training" ? "onRedTrainingPhase1Best" : "onRedOriginalPhase1Best";
+    loadBestScore();
 
     gameStarted = true;
     gameState = GAME_STATE.PLAYING;
@@ -1802,6 +1807,8 @@ window.startONREDGame = function () {
         requestAnimationFrame(gameLoop);
     }
 };
+
+window.ONREDMainGame = { exit: returnToMainMenu };
 
 // Compatibilidade com menu.js que dispara o evento onred:start.
 document.addEventListener("onred:start", function () {
