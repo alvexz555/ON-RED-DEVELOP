@@ -280,6 +280,7 @@
     state.gameOverShown = true;
     resetJoystick();
     saveBestScore();
+    if (window.ONREDSetGameOverTaunt) window.ONREDSetGameOverTaunt();
     updateReviveOffer();
     if (ui.pauseButton) ui.pauseButton.style.display = "none";
     hideScreen(ui.pauseScreen);
