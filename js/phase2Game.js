@@ -1509,15 +1509,15 @@
     }
 
     // Enfraquecimento: aura discreta e instável, sem clarão ou raios de ativação.
-    const weaknessRatio = clamp(state.lifeLosses / 3, 0, 1);
-    if (weaknessRatio > 0) {
+    const weaknessAuraRatio = clamp(state.lifeLosses / 3, 0, 1);
+    if (weaknessAuraRatio > 0) {
       ctx.save();
-      ctx.globalAlpha = 0.16 + weaknessRatio * 0.12;
+      ctx.globalAlpha = 0.16 + weaknessAuraRatio * 0.12;
       ctx.strokeStyle = "#9D3540";
       ctx.lineWidth = 1.5 + weaknessRatio;
       ctx.setLineDash([5, 7]);
       ctx.beginPath();
-      ctx.arc(state.x, state.y, 25 + Math.sin(state.time * 7) * (2 + weaknessRatio * 2), 0, Math.PI * 2);
+      ctx.arc(state.x, state.y, 25 + Math.sin(state.time * 7) * (2 + weaknessAuraRatio * 2), 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
