@@ -1377,9 +1377,9 @@
           else ctx.lineTo(px, py);
         }
         ctx.closePath();
-        ctx.fillStyle = "#080D16";
+        ctx.fillStyle = "#16080D";
         ctx.fill();
-        ctx.strokeStyle = "rgba(22, 139, 255, 0.22)";
+        ctx.strokeStyle = "rgba(255, 38, 63, 0.28)";
         ctx.lineWidth = 1;
         ctx.stroke();
       }
