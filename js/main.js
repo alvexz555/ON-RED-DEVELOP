@@ -1855,7 +1855,7 @@ function reviveONREDGame() {
 
 function restartONREDGame() {
 
-    if (gameState !== GAME_STATE.GAME_OVER && gameState !== GAME_STATE.VICTORY && gameState !== GAME_STATE.PAUSED) return;
+    if (!gameStarted && gameState !== GAME_STATE.GAME_OVER && gameState !== GAME_STATE.VICTORY && gameState !== GAME_STATE.PAUSED) return;
 
     gameStarted = true;
     gameState = GAME_STATE.PLAYING;
