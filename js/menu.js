@@ -80,21 +80,38 @@
         applyVolume();
     }
     function hideMenu() { if (container) container.classList.add("hidden"); }
-    function startGame() {
-        if (typeof window.startONREDGame !== "function") {
-            console.error("[ON RED] Função de início do jogo não encontrada.");
+    function startMode(mode, phase) {
+        window.ONREDGameMode = { mode, phase };
+        hideMenu();
+        if (phase === 2) {
+            if (window.ONREDPhase2Game) window.ONREDPhase2Game.start();
+            else console.error("[ON RED] Runtime da Fase 2 não encontrado.");
             return;
         }
-        hideMenu();
-        window.startONREDGame();
+        if (typeof window.startONREDGame === "function") window.startONREDGame();
+        else console.error("[ON RED] Runtime da Fase 1 não encontrado.");
+    }
+
+    function handlePhaseVictory(phase) {
+        const selected = window.ONREDGameMode || { mode: "original", phase: 1 };
+        const nextPhase = selected.mode === "training"
+            ? phase
+            : (phase === 1 ? 2 : 1);
+        if (phase === 1 && window.ONREDMainGame) window.ONREDMainGame.exit();
+        if (phase === 2 && window.ONREDPhase2Game) window.ONREDPhase2Game.exit();
+        startMode(selected.mode, nextPhase);
+        return true;
     }
     function initialize() {
         if (!container || !home) {
             console.error("[ON RED] Estrutura do menu não encontrada.");
             return;
         }
-        $("playButton")?.addEventListener("click", startGame);
-        $("phaseOneButton")?.addEventListener("click", startGame);
+        $("playButton")?.addEventListener("click", () => startMode("original", 1));
+        $("phaseOneOriginalButton")?.addEventListener("click", () => startMode("original", 1));
+        $("phaseOneTrainingButton")?.addEventListener("click", () => startMode("training", 1));
+        $("phaseTwoOriginalButton")?.addEventListener("click", () => startMode("original", 2));
+        $("phaseTwoTrainingButton")?.addEventListener("click", () => startMode("training", 2));
         $("phasesButton")?.addEventListener("click", () => openPanel("phasesPanel"));
         $("recordsButton")?.addEventListener("click", () => openPanel("recordsPanel"));
         $("instructionsButton")?.addEventListener("click", () => openPanel("instructionsPanel"));
@@ -115,6 +132,7 @@
         }
         showMenu();
     }
+    window.ONREDModeManager = { handlePhaseVictory, startMode };
     window.ONREDMenu = { initialize, showMenu, hideMenu, refreshRecords };
     initialize();
 })();
