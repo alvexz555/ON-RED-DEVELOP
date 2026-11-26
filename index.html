@@ -95,7 +95,16 @@
 
         <section id="recordsPanel" class="menu-panel hidden" aria-labelledby="recordsTitle">
             <div class="menu-panel-heading"><span class="menu-kicker">DESEMPENHO</span><h2 id="recordsTitle">RECORDES</h2></div>
-            <div class="record-card"><span class="score-label">MELHOR PONTUAÇÃO</span><strong id="recordsBestScore" class="record-value">000000</strong><span class="record-caption">Recorde pessoal salvo neste dispositivo</span></div>
+            <div class="record-group">
+                <h3 class="record-group-title">MODO ORIGINAL</h3>
+                <div class="record-card"><span class="score-label">FASE 01 · ON RED</span><strong id="recordOriginalPhase1" class="record-value">000000</strong><span class="record-caption">Melhor pontuação no modo principal</span></div>
+                <div class="record-card"><span class="score-label">FASE 02 · SOBRECARGA</span><strong id="recordOriginalPhase2" class="record-value">000000</strong><span class="record-caption">Melhor pontuação na segunda fase</span></div>
+            </div>
+            <div class="record-group">
+                <h3 class="record-group-title">MODO TREINO</h3>
+                <div class="record-card"><span class="score-label">FASE 01 · ON RED</span><strong id="recordTrainingPhase1" class="record-value">000000</strong><span class="record-caption">Recorde individual de treino</span></div>
+                <div class="record-card"><span class="score-label">FASE 02 · SOBRECARGA</span><strong id="recordTrainingPhase2" class="record-value">000000</strong><span class="record-caption">Recorde individual de treino</span></div>
+            </div>
             <div class="record-card record-upcoming"><span class="score-label">RANKING MUNDIAL</span><strong>EM BREVE</strong><span class="record-caption">O placar online será adicionado em uma atualização futura.</span></div>
             <button type="button" class="menu-button menu-back" data-menu-back>VOLTAR</button>
         </section>
