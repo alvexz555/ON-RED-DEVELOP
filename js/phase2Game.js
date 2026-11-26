@@ -1157,19 +1157,94 @@
     const halfGap = laser.gap / 2;
     const start = laser.gapCenter - halfGap;
     const end = laser.gapCenter + halfGap;
+    const horizontal = laser.axis === "h";
+    const span = horizontal ? innerWidth : innerHeight;
+    const pulse = 0.82 + Math.sin(state.time * 34 + laser.at * 0.03) * 0.18;
+
+    const drawSegments = (callback) => {
+      callback(0, start);
+      callback(end, span);
+    };
+
     ctx.save();
-    ctx.strokeStyle = warning ? "rgba(255,57,72,.58)" : "#FF3948";
-    ctx.lineWidth = warning ? 2 : 15;
-    ctx.setLineDash(warning ? [8, 8] : []);
-    ctx.beginPath();
-    if (laser.axis === "h") {
-      ctx.moveTo(0, laser.at); ctx.lineTo(start, laser.at);
-      ctx.moveTo(end, laser.at); ctx.lineTo(innerWidth, laser.at);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // A prévia pulsa e converge visualmente para o disparo, sem mudar seu tempo.
+    if (warning) {
+      const charge = 1 - clamp(laser.t / TUNING.laserWarning, 0, 1);
+      ctx.globalAlpha = 0.35 + charge * 0.5;
+      ctx.strokeStyle = "#FF263F";
+      ctx.lineWidth = 3 + charge * 3;
+      ctx.setLineDash([12, 9]);
+      ctx.lineDashOffset = -state.time * 24;
+      ctx.beginPath();
+      drawSegments((a, b) => {
+        if (horizontal) { ctx.moveTo(a, laser.at); ctx.lineTo(b, laser.at); }
+        else { ctx.moveTo(laser.at, a); ctx.lineTo(laser.at, b); }
+      });
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.22 + charge * 0.24;
+      ctx.fillStyle = "#FF3948";
+      if (horizontal) {
+        ctx.fillRect(start - 2, laser.at - 13, 4, 26);
+        ctx.fillRect(end - 2, laser.at - 13, 4, 26);
+      } else {
+        ctx.fillRect(laser.at - 13, start - 2, 26, 4);
+        ctx.fillRect(laser.at - 13, end - 2, 26, 4);
+      }
     } else {
-      ctx.moveTo(laser.at, 0); ctx.lineTo(laser.at, start);
-      ctx.moveTo(laser.at, end); ctx.lineTo(laser.at, innerHeight);
+      ctx.globalCompositeOperation = "lighter";
+
+      // Halo largo, corpo vermelho e núcleo branco criam profundidade de feixe.
+      ctx.globalAlpha = 0.42 * pulse;
+      ctx.strokeStyle = "#FF102F";
+      ctx.lineWidth = 34;
+      ctx.shadowColor = "#FF1838";
+      ctx.shadowBlur = 34;
+      ctx.beginPath();
+      drawSegments((a, b) => {
+        if (horizontal) { ctx.moveTo(a, laser.at); ctx.lineTo(b, laser.at); }
+        else { ctx.moveTo(laser.at, a); ctx.lineTo(laser.at, b); }
+      });
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "#FF263F";
+      ctx.lineWidth = 17;
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      drawSegments((a, b) => {
+        if (horizontal) { ctx.moveTo(a, laser.at); ctx.lineTo(b, laser.at); }
+        else { ctx.moveTo(laser.at, a); ctx.lineTo(laser.at, b); }
+      });
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.98;
+      ctx.strokeStyle = "#FFF2F4";
+      ctx.lineWidth = 4;
+      ctx.shadowColor = "#FFFFFF";
+      ctx.shadowBlur = 11;
+      ctx.beginPath();
+      drawSegments((a, b) => {
+        if (horizontal) { ctx.moveTo(a, laser.at); ctx.lineTo(b, laser.at); }
+        else { ctx.moveTo(laser.at, a); ctx.lineTo(laser.at, b); }
+      });
+      ctx.stroke();
+
+      // Terminais luminosos deixam a abertura segura claramente delimitada.
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = "#FFFFFF";
+      if (horizontal) {
+        ctx.fillRect(start - 2, laser.at - 9, 4, 18);
+        ctx.fillRect(end - 2, laser.at - 9, 4, 18);
+      } else {
+        ctx.fillRect(laser.at - 9, start - 2, 18, 4);
+        ctx.fillRect(laser.at - 9, end - 2, 18, 4);
+      }
     }
-    ctx.stroke();
     ctx.restore();
   }
 
