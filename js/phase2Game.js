@@ -85,7 +85,8 @@
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
     bossImpactTimer: 0, bossImpactX: 0, bossImpactY: 0,
-    overloadTimer: 0,
+    bossBounceTimer: 0, bossBounceX: 0, bossBounceY: 0,
+    overloadTimer: 0, lifeLosses: 0, weaknessParticles: [],
     effects: { gravity: 0, ghost: 0, invert: 0, freeze: 0 },
     gravityPoint: null, pingPongs: [],
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
@@ -187,6 +188,11 @@
     state.dashTime = 0;
     state.dashCharged = false;
     state.bossDashHit = false;
+    state.bossImpactTimer = 0;
+    state.bossBounceTimer = 0;
+    state.overloadTimer = 0;
+    state.lifeLosses = 0;
+    state.weaknessParticles = [];
     state.invuln = 1.2;
     state.shieldHitsRemaining = 0;
     state.x = innerWidth / 2;
@@ -626,7 +632,20 @@
       } else {
         state.hp = TUNING.maxHP;
         state.invuln = 1.8;
-        state.overloadTimer = 1.8;
+        state.lifeLosses += 1;
+        state.overloadTimer = 1.15;
+        for (let i = 0; i < 12; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 24 + Math.random() * 72;
+          state.weaknessParticles.push({
+            x: state.x + Math.cos(angle) * 8,
+            y: state.y + Math.sin(angle) * 8,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 18,
+            life: 0.55 + Math.random() * 0.45,
+            maxLife: 1
+          });
+        }
         // A perda de uma vida não teleporta o jogador: preserva a posição
         // exata do impacto e interrompe somente o movimento.
         state.vx = 0;
@@ -863,8 +882,8 @@
       boss.x += boss.dashVX * dt;
       boss.y += boss.dashVY * dt;
 
-      // Ao tocar uma parede durante o DASH, o boss ricocheteia imediatamente
-      // em uma nova direção aleatória voltada para dentro da arena. Sem aviso.
+      // Ricochete físico e previsível: inverte apenas os eixos que tocaram a parede.
+      // A trajetória fica legível e o jogador consegue antecipar o próximo avanço.
       const hitLeft = boss.x < boss.r;
       const hitRight = boss.x > innerWidth - boss.r;
       const hitTop = boss.y < boss.r;
@@ -872,23 +891,16 @@
       if (hitLeft || hitRight || hitTop || hitBottom) {
         boss.x = clamp(boss.x, boss.r, innerWidth - boss.r);
         boss.y = clamp(boss.y, boss.r, innerHeight - boss.r);
-
-        let minAngle = 0;
-        let maxAngle = Math.PI * 2;
-        if (hitLeft) { minAngle = -Math.PI / 2; maxAngle = Math.PI / 2; }
-        else if (hitRight) { minAngle = Math.PI / 2; maxAngle = Math.PI * 1.5; }
-        else if (hitTop) { minAngle = 0; maxAngle = Math.PI; }
-        else if (hitBottom) { minAngle = Math.PI; maxAngle = Math.PI * 2; }
-
-        // Em cantos, direciona para o centro para evitar escolher um vetor externo.
-        if ((hitLeft || hitRight) && (hitTop || hitBottom)) {
-          const towardCenter = Math.atan2(innerHeight / 2 - boss.y, innerWidth / 2 - boss.x);
-          minAngle = towardCenter - Math.PI / 3;
-          maxAngle = towardCenter + Math.PI / 3;
-        }
-        const angle = minAngle + Math.random() * (maxAngle - minAngle);
-        boss.dashVX = Math.cos(angle) * TUNING.bossDashSpeed;
-        boss.dashVY = Math.sin(angle) * TUNING.bossDashSpeed;
+        if (hitLeft || hitRight) boss.dashVX = -boss.dashVX;
+        if (hitTop || hitBottom) boss.dashVY = -boss.dashVY;
+        const dashSpeed = Math.hypot(boss.dashVX, boss.dashVY) || TUNING.bossDashSpeed;
+        boss.dashX = boss.dashVX / dashSpeed;
+        boss.dashY = boss.dashVY / dashSpeed;
+        state.bossBounceX = boss.x;
+        state.bossBounceY = boss.y;
+        state.bossBounceTimer = 0.32;
+        state.message = "RICOCHETE! A SERRA MUDOU DE DIREÇÃO";
+        state.messageTimer = 0.65;
       }
 
       boss.dashTimer -= dt;
@@ -992,7 +1004,16 @@
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
     state.bossImpactTimer = Math.max(0, state.bossImpactTimer - dt);
+    state.bossBounceTimer = Math.max(0, state.bossBounceTimer - dt);
     state.overloadTimer = Math.max(0, state.overloadTimer - dt);
+    for (const particle of state.weaknessParticles) {
+      particle.life -= dt;
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vx *= Math.pow(0.18, dt);
+      particle.vy = particle.vy * Math.pow(0.18, dt) + 34 * dt;
+    }
+    state.weaknessParticles = state.weaknessParticles.filter(particle => particle.life > 0);
     // Snapshot no início do frame: não perder a colisão no último frame
     // quando o contador do DASH chega a zero durante este dt.
     const dashActiveThisFrame = state.dashTime > 0;
@@ -1367,6 +1388,17 @@
         ctx.stroke();
         ctx.restore();
       }
+      if (boss.dashState === "charging") {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,55,70,.42)";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([7, 9]);
+        ctx.beginPath();
+        ctx.moveTo(boss.x - boss.dashX * 42, boss.y - boss.dashY * 42);
+        ctx.lineTo(boss.x - boss.dashX * 118, boss.y - boss.dashY * 118);
+        ctx.stroke();
+        ctx.restore();
+      }
       drawSawShape(boss.x, boss.y, boss.r, boss.angle, 32, true);
       ctx.fillStyle = "#263648";
       ctx.fillRect(w * 0.2, 20, w * 0.6, 8);
@@ -1376,6 +1408,21 @@
       ctx.font = "bold 11px Arial";
       ctx.textAlign = "center";
       ctx.fillText("SERRA GIGANTE", w / 2, 15);
+    }
+
+    // Pulso no ponto de ricochete para comunicar a mudança de direção.
+    if (state.bossBounceTimer > 0) {
+      const progress = 1 - state.bossBounceTimer / 0.32;
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+      ctx.strokeStyle = "#FF5364";
+      ctx.lineWidth = 3;
+      ctx.shadowColor = "#FF263F";
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(state.bossBounceX, state.bossBounceY, 12 + progress * 42, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Efeito de impacto renderizado DEPOIS do boss para não ficar escondido
@@ -1438,9 +1485,13 @@
       state.shieldHitsRemaining > 0 ? "#168BFF" : "rgb(255," +
       Math.round(107 + (255 - 107) * colorRatio) + "," +
       Math.round(112 + (255 - 112) * colorRatio) + ")";
-    ctx.shadowColor = state.shieldHitsRemaining > 0 ? "#58BFFF" : ctx.fillStyle;
-    ctx.shadowBlur = state.shieldHitsRemaining > 0 ? 22 : (state.dashTime > 0 ? 24 : 10);
+    ctx.save();
+    const weaknessRatio = clamp(state.lifeLosses / 3, 0, 1);
+    ctx.globalAlpha = 1 - weaknessRatio * 0.18;
+    ctx.shadowColor = state.shieldHitsRemaining > 0 ? "#58BFFF" : (weaknessRatio > 0 ? "#A52A35" : ctx.fillStyle);
+    ctx.shadowBlur = state.shieldHitsRemaining > 0 ? 22 : (state.dashTime > 0 ? 24 : 10 - weaknessRatio * 7);
     ctx.fill();
+    ctx.restore();
     if (state.shieldHitsRemaining > 0) {
       ctx.beginPath();
       ctx.arc(state.x, state.y, TUNING.playerRadius + 5, 0, Math.PI * 2);
@@ -1457,59 +1508,39 @@
       ctx.stroke();
     }
 
-    // SOBRECARGA: descarga vermelha durante a pausa após perder uma vida.
-    if (state.overloadTimer > 0) {
-      const progress = 1 - state.overloadTimer / 1.8;
-      const pulse = 1 + Math.sin(state.time * 42) * 0.13;
-      const fade = 0.68 + Math.sin(state.time * 27) * 0.12;
+    // Enfraquecimento: aura discreta e instável, sem clarão ou raios de ativação.
+    const weaknessRatio = clamp(state.lifeLosses / 3, 0, 1);
+    if (weaknessRatio > 0) {
       ctx.save();
-      ctx.globalCompositeOperation = "source-over";
-      const glow = ctx.createRadialGradient(state.x, state.y, 5, state.x, state.y, 62 * pulse);
-      glow.addColorStop(0, "rgba(255,245,245,.72)");
-      glow.addColorStop(0.2, "rgba(255,35,48,.48)");
-      glow.addColorStop(0.62, "rgba(220,0,24,.12)");
-      glow.addColorStop(1, "rgba(180,0,20,0)");
-      ctx.fillStyle = glow;
+      ctx.globalAlpha = 0.16 + weaknessRatio * 0.12;
+      ctx.strokeStyle = "#9D3540";
+      ctx.lineWidth = 1.5 + weaknessRatio;
+      ctx.setLineDash([5, 7]);
       ctx.beginPath();
-      ctx.arc(state.x, state.y, 62 * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(state.x, state.y, 31 + Math.sin(state.time * 34) * 5, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,70,80," + fade + ")";
-      ctx.lineWidth = 4 + Math.sin(state.time * 39) * 1.5;
-      ctx.shadowColor = "#FF1028";
-      ctx.shadowBlur = 16;
+      ctx.arc(state.x, state.y, 25 + Math.sin(state.time * 7) * (2 + weaknessRatio * 2), 0, Math.PI * 2);
       ctx.stroke();
-      // Raios irregulares, com ramificações e comprimento variável.
-      for (let bolt = 0; bolt < 10; bolt++) {
-        const angle = bolt * Math.PI * 2 / 10 + Math.sin(state.time * 18 + bolt) * 0.22;
-        const length = 42 + 25 * (0.5 + 0.5 * Math.sin(state.time * 31 + bolt * 2.7));
-        const segments = 5;
-        let px = state.x + Math.cos(angle) * 25;
-        let py = state.y + Math.sin(angle) * 25;
+      ctx.restore();
+    }
+    if (state.weaknessParticles.length) {
+      ctx.save();
+      for (const particle of state.weaknessParticles) {
+        ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife) * 0.55;
+        ctx.fillStyle = "#A94750";
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        for (let p = 1; p <= segments; p++) {
-          const distance = 25 + (length - 25) * p / segments;
-          const jitter = p === segments ? 0 : Math.sin(state.time * 47 + bolt * 9 + p * 4) * 9;
-          px = state.x + Math.cos(angle) * distance + Math.cos(angle + Math.PI / 2) * jitter;
-          py = state.y + Math.sin(angle) * distance + Math.sin(angle + Math.PI / 2) * jitter;
-          ctx.lineTo(px, py);
-        }
-        ctx.strokeStyle = bolt % 3 === 0 ? "#FFFFFF" : (bolt % 2 ? "#FF263D" : "#FF6470");
-        ctx.lineWidth = bolt % 3 === 0 ? 3.5 : 2.5;
-        ctx.shadowColor = "#FF001E";
-        ctx.shadowBlur = 13;
-        ctx.stroke();
-        if (bolt % 3 === 0) {
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + Math.cos(angle + 0.8) * 17, py + Math.sin(angle + 0.8) * 17);
-          ctx.strokeStyle = "#FF263D";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
+        ctx.arc(particle.x, particle.y, 1.5 + particle.life * 1.5, 0, Math.PI * 2);
+        ctx.fill();
       }
+      ctx.restore();
+    }
+    if (state.overloadTimer > 0) {
+      const fade = state.overloadTimer / 1.15;
+      ctx.save();
+      ctx.globalAlpha = 0.2 * fade;
+      ctx.strokeStyle = "#A94750";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(state.x, state.y, 22 + (1 - fade) * 17, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
 
