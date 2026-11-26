@@ -9,27 +9,59 @@
     const home = $("menuHome");
     const container = $("mainMenu");
     const bestScore = $("bestScore");
-    const recordsBestScore = $("recordsBestScore");
+    const RECORD_KEYS = {
+        originalPhase1: "onRedOriginalPhase1Best",
+        originalPhase2: "onRedOriginalPhase2Best",
+        trainingPhase1: "onRedTrainingPhase1Best",
+        trainingPhase2: "onRedTrainingPhase2Best"
+    };
     const volumeSlider = $("volumeSlider");
     const volumeValue = $("volumeValue");
     const joystickSideSelect = $("joystickSide");
     const VOLUME_KEY = "onRedVolume";
     const JOYSTICK_SIDE_KEY = "onRedJoystickSide";
 
-    function readBestScore() {
+    function readScore(key) {
         try {
-            const value = Number(localStorage.getItem("onRedBestScore") || 0);
+            const value = Number(localStorage.getItem(key) || 0);
             return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
         } catch (error) {
-            console.warn("[ON RED] Não foi possível ler o recorde.", error);
+            console.warn("[ON RED] Não foi possível ler o recorde " + key + ".", error);
             return 0;
+        }
+    }
+    function migrateLegacyRecord() {
+        // O recorde antigo era global. Preserva-o como recorde do modo
+        // Original da Fase 1, sem sobrescrever um recorde já existente.
+        try {
+            const legacy = Number(localStorage.getItem("onRedBestScore") || 0);
+            const current = Number(localStorage.getItem(RECORD_KEYS.originalPhase1) || 0);
+            if (Number.isFinite(legacy) && legacy > current && legacy > 0) {
+                localStorage.setItem(RECORD_KEYS.originalPhase1, String(Math.floor(legacy)));
+            }
+        } catch (error) {
+            console.warn("[ON RED] Não foi possível migrar o recorde antigo.", error);
         }
     }
     function formatScore(value) { return String(value).padStart(6, "0"); }
     function refreshRecords() {
-        const score = formatScore(readBestScore());
-        if (bestScore) bestScore.textContent = score;
-        if (recordsBestScore) recordsBestScore.textContent = score;
+        migrateLegacyRecord();
+        const scores = {
+            originalPhase1: formatScore(readScore(RECORD_KEYS.originalPhase1)),
+            originalPhase2: formatScore(readScore(RECORD_KEYS.originalPhase2)),
+            trainingPhase1: formatScore(readScore(RECORD_KEYS.trainingPhase1)),
+            trainingPhase2: formatScore(readScore(RECORD_KEYS.trainingPhase2))
+        };
+        if (bestScore) bestScore.textContent = scores.originalPhase1;
+        const elements = {
+            originalPhase1: $("recordOriginalPhase1"),
+            originalPhase2: $("recordOriginalPhase2"),
+            trainingPhase1: $("recordTrainingPhase1"),
+            trainingPhase2: $("recordTrainingPhase2")
+        };
+        Object.keys(elements).forEach(key => {
+            if (elements[key]) elements[key].textContent = scores[key];
+        });
     }
     function readVolume() {
         try {
