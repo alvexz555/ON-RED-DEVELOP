@@ -1355,72 +1355,35 @@
     const w = innerWidth, h = innerHeight;
     ctx.clearRect(0, 0, w, h);
 
-    // Fundo arcade profundo: luzes ambientais, grade técnica e vinheta.
-    const base = ctx.createLinearGradient(0, 0, w, h);
-    base.addColorStop(0, "#080D18");
-    base.addColorStop(0.52, "#090B13");
-    base.addColorStop(1, "#120910");
-    ctx.fillStyle = base;
+    // Mesmo fundo hexagonal da Fase 1, preservando a identidade visual.
+    ctx.fillStyle = "#03060d";
     ctx.fillRect(0, 0, w, h);
 
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    const blueGlow = ctx.createRadialGradient(w * 0.08, h * 0.16, 0, w * 0.08, h * 0.16, Math.max(w, h) * 0.72);
-    blueGlow.addColorStop(0, "rgba(18,105,190,.19)");
-    blueGlow.addColorStop(1, "rgba(18,105,190,0)");
-    ctx.fillStyle = blueGlow;
-    ctx.fillRect(0, 0, w, h);
-    const redGlow = ctx.createRadialGradient(w * 0.94, h * 0.86, 0, w * 0.94, h * 0.86, Math.max(w, h) * 0.66);
-    redGlow.addColorStop(0, "rgba(190,22,48,.15)");
-    redGlow.addColorStop(1, "rgba(190,22,48,0)");
-    ctx.fillStyle = redGlow;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
+    const hexSize = 28;
+    const hexWidth = Math.sqrt(3) * hexSize;
+    const hexHeight = hexSize * 1.5;
 
-    // Grade fina com linhas principais discretamente destacadas.
-    ctx.save();
-    ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += 32) {
-      ctx.strokeStyle = x % 128 === 0 ? "rgba(83,158,220,.105)" : "rgba(83,158,220,.045)";
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-    }
-    for (let y = 0; y < h; y += 32) {
-      ctx.strokeStyle = y % 128 === 0 ? "rgba(83,158,220,.105)" : "rgba(83,158,220,.045)";
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }
+    for (let row = -1; row < h / hexHeight + 2; row++) {
+      for (let col = -1; col < w / hexWidth + 2; col++) {
+        const x = col * hexWidth + (row % 2) * hexWidth / 2;
+        const y = row * hexHeight;
 
-    // Marcas diagonais de circuito nas bordas, mantendo o centro limpo.
-    ctx.strokeStyle = "rgba(67,151,210,.12)";
-    ctx.lineWidth = 1.2;
-    const cornerSize = Math.min(86, w * 0.22, h * 0.16);
-    for (const side of [0, 1]) {
-      const x = side === 0 ? 18 : w - 18;
-      const direction = side === 0 ? 1 : -1;
-      ctx.beginPath();
-      ctx.moveTo(x, 0); ctx.lineTo(x, cornerSize * 0.55);
-      ctx.lineTo(x + direction * cornerSize * 0.35, cornerSize * 0.55);
-      ctx.lineTo(x + direction * cornerSize * 0.35, cornerSize);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x, h); ctx.lineTo(x, h - cornerSize * 0.55);
-      ctx.lineTo(x + direction * cornerSize * 0.35, h - cornerSize * 0.55);
-      ctx.lineTo(x + direction * cornerSize * 0.35, h - cornerSize);
-      ctx.stroke();
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI / 180) * (60 * i - 30);
+          const px = x + hexSize * Math.cos(angle);
+          const py = y + hexSize * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = "#080D16";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(22, 139, 255, 0.22)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
-
-    // Scanlines quase imperceptíveis dão textura sem competir com os obstáculos.
-    ctx.fillStyle = "rgba(180,205,230,.018)";
-    for (let y = (state.time * 8) % 6; y < h; y += 6) {
-      ctx.fillRect(0, y, w, 1);
-    }
-
-    const vignette = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2,
-      w / 2, h / 2, Math.max(w, h) * 0.76);
-    vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(1, "rgba(0,0,0,.48)");
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
 
     for (const zone of state.zones) {
       ctx.beginPath();
