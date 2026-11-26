@@ -153,20 +153,6 @@ button {
     letter-spacing: 3px;
 }
 
-.game-over-message .game-over-taunt-title {
-    max-width: 100%;
-    font-size: clamp(29px, 8.5vw, 43px);
-    letter-spacing: 2px;
-    text-align: center;
-}
-
-.game-over-message .game-over-taunt-subtitle {
-    max-width: 310px;
-    line-height: 1.5;
-    letter-spacing: 1.5px;
-    text-align: center;
-}
-
 .game-over-line {
     width: 65px;
     height: 2px;
