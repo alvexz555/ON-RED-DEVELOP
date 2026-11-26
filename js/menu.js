@@ -80,16 +80,47 @@
         applyVolume();
     }
     function hideMenu() { if (container) container.classList.add("hidden"); }
+    function showRuntimeError(message) {
+        showMenu();
+        let notice = $("runtimeErrorNotice");
+        if (!notice && home) {
+            notice = document.createElement("p");
+            notice.id = "runtimeErrorNotice";
+            notice.setAttribute("role", "alert");
+            notice.style.cssText = "margin:14px auto 0;padding:12px;border:1px solid #FF3948;border-radius:8px;color:#FFD8DC;background:rgba(255,57,72,.12);font:12px/1.5 Arial,sans-serif;max-width:420px;overflow-wrap:anywhere;";
+            home.appendChild(notice);
+        }
+        if (notice) notice.textContent = "NÃO FOI POSSÍVEL INICIAR A FASE. " + message;
+    }
+    window.addEventListener("error", event => {
+        if (!String(event.filename || "").includes("phase2Game.js")) return;
+        console.error("[ON RED] Erro no runtime da Fase 2:", event.error || event.message);
+        try { window.ONREDPhase2Game?.exit(); } catch (exitError) {
+            console.error("[ON RED] Falha ao encerrar o runtime:", exitError);
+        }
+        showRuntimeError(event.message || "Erro ao carregar ou executar a Fase 2.");
+    });
     function startMode(mode, phase) {
-        window.ONREDGameMode = { mode, phase };
-        hideMenu();
-        if (phase === 2) {
-            if (window.ONREDPhase2Game) window.ONREDPhase2Game.start();
-            else console.error("[ON RED] Runtime da Fase 2 não encontrado.");
+        const runtime = phase === 2 ? window.ONREDPhase2Game : null;
+        if (phase === 2 && (!runtime || typeof runtime.start !== "function")) {
+            showRuntimeError("O código da Fase 2 não foi carregado. Atualize a página e tente novamente.");
+            console.error("[ON RED] Runtime da Fase 2 não encontrado.");
             return;
         }
-        if (typeof window.startONREDGame === "function") window.startONREDGame();
-        else console.error("[ON RED] Runtime da Fase 1 não encontrado.");
+        if (phase === 1 && typeof window.startONREDGame !== "function") {
+            showRuntimeError("O código da Fase 1 não foi carregado. Atualize a página e tente novamente.");
+            console.error("[ON RED] Runtime da Fase 1 não encontrado.");
+            return;
+        }
+        window.ONREDGameMode = { mode, phase };
+        hideMenu();
+        try {
+            if (phase === 2) runtime.start();
+            else window.startONREDGame();
+        } catch (error) {
+            console.error("[ON RED] Falha ao iniciar a fase:", error);
+            showRuntimeError(error && error.message ? error.message : "Falha inesperada ao iniciar.");
+        }
     }
 
     function handlePhaseVictory(phase) {
