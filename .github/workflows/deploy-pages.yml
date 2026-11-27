@@ -33,8 +33,11 @@ jobs:
       - name: Upload development preview
         uses: actions/upload-pages-artifact@v3
         with:
+          name: phase2-preview-${{ github.run_id }}-${{ github.run_attempt }}
           path: .
 
       - name: Deploy Phase 2 preview
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: phase2-preview-${{ github.run_id }}-${{ github.run_attempt }}

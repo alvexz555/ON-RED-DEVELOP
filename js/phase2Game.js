@@ -1051,7 +1051,7 @@
   function update(dt) {
     if (!state.active || state.paused || state.over || state.victory) return;
     state.time += dt;
-    state.score += dt * 100;
+    if (state.bossWarningTimer <= 0) state.score += dt * 100;
     if (state.bossWarningTimer > 0) {
       state.bossWarningTimer = Math.max(0, state.bossWarningTimer - dt);
       if (state.bossWarningTimer === 0) beginBoss();
