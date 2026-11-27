@@ -214,6 +214,8 @@
     state.zoneTimer = 1;
     state.mergeTimer = 3;
     state.boss = null;
+    state.bossEntryTimer = 0;
+    state.bossEntryShown = false;
     state.pointer = null;
     state.pointerId = null;
     resetJoystick();
@@ -1155,7 +1157,12 @@
       state.bossEntryTimer = 1.8;
       beginBoss();
     }
-    if (state.bossEntryTimer <= 0 && state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+    if (state.bossEntryTimer > 0) {
+      state.message = "BOSS APPROACHING";
+      state.messageTimer = state.bossEntryTimer;
+    } else if (state.effects.freeze <= 0) {
+      updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+    }
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
