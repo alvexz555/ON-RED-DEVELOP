@@ -34,6 +34,7 @@
     mergeScore: 1000,
     mergeInterval: 7,
     bossTriggerSeconds: 105,
+    bossWarningDuration: 2,
     bossHP: 1200,
     bossDashDamage: 200,
     bossNormalDashDamage: 40,
@@ -87,6 +88,7 @@
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
+    bossWarningTimer: 0, bossWarningShown: false,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
     bossImpactTimer: 0, bossImpactX: 0, bossImpactY: 0,
     bossBounceTimer: 0, bossBounceX: 0, bossBounceY: 0,
@@ -182,6 +184,8 @@
     state.victoryShown = false;
     state.time = 0;
     state.score = 0;
+    state.bossWarningTimer = 0;
+    state.bossWarningShown = false;
     state.hp = TUNING.maxHP;
     state.lives = TUNING.startingLives;
     state.energy = 0;
@@ -1048,6 +1052,10 @@
     if (!state.active || state.paused || state.over || state.victory) return;
     state.time += dt;
     state.score += dt * 100;
+    if (state.bossWarningTimer > 0) {
+      state.bossWarningTimer = Math.max(0, state.bossWarningTimer - dt);
+      if (state.bossWarningTimer === 0) beginBoss();
+    }
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
     state.bossImpactTimer = Math.max(0, state.bossImpactTimer - dt);
@@ -1141,11 +1149,21 @@
     }
     state.merges = state.merges.filter(orb => orb.life > 0);
 
-    updatePingPongs(dt);
-    updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
-    updateLasers(dt);
-    if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
-    if (state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+    if (state.bossWarningTimer <= 0) {
+      updatePingPongs(dt);
+      updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+      updateLasers(dt);
+    }
+    if (!state.bossDefeated && !state.boss && !state.bossWarningShown && state.time >= TUNING.bossTriggerSeconds) {
+      state.bossWarningShown = true;
+      state.bossWarningTimer = TUNING.bossWarningDuration;
+      state.saws = [];
+      state.lasers = [];
+      state.pingPongs = [];
+      state.message = "BOSS APPROACHING";
+      state.messageTimer = TUNING.bossWarningDuration;
+    }
+    if (state.bossWarningTimer <= 0 && state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
@@ -1695,7 +1713,27 @@
     drawJoystick();
     drawDashButton();
 
-    if (state.messageTimer > 0) {
+    if (state.bossWarningTimer > 0) {
+      const pulse = 0.82 + Math.sin(state.time * 18) * 0.08;
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,.72)";
+      ctx.fillRect(0, 0, w, h);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = pulse;
+      ctx.font = "900 " + Math.max(25, Math.min(38, w * 0.085)) + "px Arial";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.shadowColor = "#FF263F";
+      ctx.shadowBlur = 24;
+      ctx.fillText("BOSS APPROACHING", w / 2, h * 0.46);
+      ctx.shadowBlur = 0;
+      ctx.font = "bold 12px Arial";
+      ctx.fillStyle = "#FF5364";
+      ctx.fillText("PREPARE-SE", w / 2, h * 0.46 + 34);
+      ctx.restore();
+    }
+
+    if (state.messageTimer > 0 && state.bossWarningTimer <= 0) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "bold 13px Arial";
