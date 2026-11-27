@@ -34,6 +34,7 @@
     mergeScore: 1000,
     mergeInterval: 7,
     bossTriggerSeconds: 105,
+    bossWarningDuration: 2,
     bossHP: 1200,
     bossDashDamage: 200,
     bossNormalDashDamage: 40,
@@ -87,6 +88,7 @@
   const state = {
     active: false, paused: false, over: false, victory: false,
     time: 0, score: 0, hp: TUNING.maxHP, lives: TUNING.startingLives,
+    bossWarningTimer: 0, bossWarningShown: false,
     energy: 0, dashCooldown: 0, dashTime: 0, dashCharged: false, bossDashHit: false,
     bossImpactTimer: 0, bossImpactX: 0, bossImpactY: 0,
     bossBounceTimer: 0, bossBounceX: 0, bossBounceY: 0,
@@ -96,7 +98,7 @@
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
-    boss: null, bossEntryTimer: 0, bossEntryShown: false, pointer: null, pointerId: null,
+    boss: null, pointer: null, pointerId: null,
     revivesUsed: 0, bossDefeated: false, postBoss: false,
     gameOverShown: false, victoryShown: false,
     message: "", messageTimer: 0, best: 0
@@ -182,6 +184,8 @@
     state.victoryShown = false;
     state.time = 0;
     state.score = 0;
+    state.bossWarningTimer = 0;
+    state.bossWarningShown = false;
     state.hp = TUNING.maxHP;
     state.lives = TUNING.startingLives;
     state.energy = 0;
@@ -214,8 +218,6 @@
     state.zoneTimer = 1;
     state.mergeTimer = 3;
     state.boss = null;
-    state.bossEntryTimer = 0;
-    state.bossEntryShown = false;
     state.pointer = null;
     state.pointerId = null;
     resetJoystick();
@@ -726,8 +728,8 @@
     };
     state.saws = [];
     state.lasers = [];
-    state.message = "BOSS APPROACHING";
-    state.messageTimer = 1.8;
+    state.message = "SERRA GIGANTE · DASH COM 100% DE ENERGIA";
+    state.messageTimer = 4;
   }
 
   function updateLasers(dt) {
@@ -1049,10 +1051,10 @@
   function update(dt) {
     if (!state.active || state.paused || state.over || state.victory) return;
     state.time += dt;
-    if (state.bossEntryTimer > 0) {
-      state.bossEntryTimer = Math.max(0, state.bossEntryTimer - dt);
-    } else {
-      state.score += dt * 100;
+    if (state.bossWarningTimer <= 0) state.score += dt * 100;
+    if (state.bossWarningTimer > 0) {
+      state.bossWarningTimer = Math.max(0, state.bossWarningTimer - dt);
+      if (state.bossWarningTimer === 0) beginBoss();
     }
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
@@ -1147,22 +1149,21 @@
     }
     state.merges = state.merges.filter(orb => orb.life > 0);
 
-    if (state.bossEntryTimer <= 0) {
+    if (state.bossWarningTimer <= 0) {
       updatePingPongs(dt);
       updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
       updateLasers(dt);
     }
-    if (!state.bossDefeated && !state.boss && !state.bossEntryShown && state.time >= TUNING.bossTriggerSeconds) {
-      state.bossEntryShown = true;
-      state.bossEntryTimer = 1.8;
-      beginBoss();
-    }
-    if (state.bossEntryTimer > 0) {
+    if (!state.bossDefeated && !state.boss && !state.bossWarningShown && state.time >= TUNING.bossTriggerSeconds) {
+      state.bossWarningShown = true;
+      state.bossWarningTimer = TUNING.bossWarningDuration;
+      state.saws = [];
+      state.lasers = [];
+      state.pingPongs = [];
       state.message = "BOSS APPROACHING";
-      state.messageTimer = state.bossEntryTimer;
-    } else if (state.effects.freeze <= 0) {
-      updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+      state.messageTimer = TUNING.bossWarningDuration;
     }
+    if (state.bossWarningTimer <= 0 && state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
@@ -1712,7 +1713,27 @@
     drawJoystick();
     drawDashButton();
 
-    if (state.messageTimer > 0) {
+    if (state.bossWarningTimer > 0) {
+      const pulse = 0.82 + Math.sin(state.time * 18) * 0.08;
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,.72)";
+      ctx.fillRect(0, 0, w, h);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = pulse;
+      ctx.font = "900 " + Math.max(25, Math.min(38, w * 0.085)) + "px Arial";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.shadowColor = "#FF263F";
+      ctx.shadowBlur = 24;
+      ctx.fillText("BOSS APPROACHING", w / 2, h * 0.46);
+      ctx.shadowBlur = 0;
+      ctx.font = "bold 12px Arial";
+      ctx.fillStyle = "#FF5364";
+      ctx.fillText("PREPARE-SE", w / 2, h * 0.46 + 34);
+      ctx.restore();
+    }
+
+    if (state.messageTimer > 0 && state.bossWarningTimer <= 0) {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "bold 13px Arial";
