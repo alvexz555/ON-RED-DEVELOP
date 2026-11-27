@@ -1700,6 +1700,40 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillText(String(Math.floor(state.score)).padStart(6, "0"), w / 2, 18);
+
+    // PREPARAÇÃO PARA O BOSS: mesma mecânica progressiva da Fase 1.
+    // Surge aos 5.000 pontos, pisca a partir dos 7.000 e some quando o Boss chega.
+    if (!state.boss && !state.bossDefeated) {
+      const appearanceFrom = 5000;
+      const blinkAt = 7000;
+      const bossArrivalScore = TUNING.bossTriggerSeconds * 100;
+      const ratio = clamp(state.score / bossArrivalScore, 0, 1);
+
+      if (state.score >= appearanceFrom) {
+        ctx.save();
+        ctx.fillStyle = "rgba(48, 55, 67, 0.72)";
+        ctx.fillRect(0, 6, w, 4);
+        ctx.globalAlpha = state.score >= blinkAt
+          ? (Math.sin(Date.now() / 250) > 0 ? 1 : 0.35)
+          : 0.95;
+        ctx.fillStyle = "#168BFF";
+        ctx.shadowColor = "#168BFF";
+        ctx.shadowBlur = 8;
+        ctx.fillRect(0, 6, w * ratio, 4);
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = "#8CCBFF";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.font = "bold 10px Arial";
+        ctx.shadowColor = "#168BFF";
+        ctx.shadowBlur = 9;
+        ctx.fillText("O INIMIGO SE APROXIMA", w / 2, 44);
+        ctx.restore();
+      }
+    }
+
     drawHealthHUD();
     drawJoystick();
     drawDashButton();
