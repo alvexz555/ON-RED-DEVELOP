@@ -42,6 +42,10 @@
     bossDashCooldown: 3.8,
     bossDashSpeed: 1050,
     bossKnockback: 720,
+    bossCrossGap: 0.25,
+    bossCrossRecovery: 1,
+    bossCrossCooldown: 8,
+    bossCrossLead: 0.28,
     sawKnockback: 420,
     gravityDuration: 5,
     ghostDuration: 5,
@@ -713,7 +717,10 @@
       dashY: 0,
       dashVX: 0,
       dashVY: 0,
-      dashHit: false
+      dashHit: false,
+      crossCombo: false,
+      crossStep: 0,
+      crossCooldown: 0
     };
     state.saws = [];
     state.lasers = [];
@@ -866,6 +873,7 @@
     const previousBossX = boss.x;
     const previousBossY = boss.y;
     boss.angle += dt * 1.15;
+    boss.crossCooldown = Math.max(0, (boss.crossCooldown || 0) - dt);
     const dx = state.x - boss.x;
     const dy = state.y - boss.y;
     const length = Math.hypot(dx, dy) || 1;
@@ -878,6 +886,26 @@
         boss.dashVX = boss.dashX * TUNING.bossDashSpeed;
         boss.dashVY = boss.dashY * TUNING.bossDashSpeed;
         boss.dashHit = false;
+      }
+    } else if (boss.dashState === "cross-gap") {
+      boss.dashTimer -= dt;
+      if (boss.dashTimer <= 0) {
+        // O segundo corte recalcula a mira usando o deslocamento recente do jogador.
+        const leadScale = dt > 0 ? TUNING.bossCrossLead / dt : 0;
+        const targetX = clamp(state.x + (state.x - previousPlayerX) * leadScale, 24, innerWidth - 24);
+        const targetY = clamp(state.y + (state.y - previousPlayerY) * leadScale, 24, innerHeight - 24);
+        const aimX = targetX - boss.x;
+        const aimY = targetY - boss.y;
+        const aimLength = Math.hypot(aimX, aimY) || 1;
+        boss.dashX = aimX / aimLength;
+        boss.dashY = aimY / aimLength;
+        boss.dashState = "charging";
+        boss.dashTimer = 0.42;
+        boss.dashVX = boss.dashX * TUNING.bossDashSpeed;
+        boss.dashVY = boss.dashY * TUNING.bossDashSpeed;
+        boss.dashHit = false;
+        state.message = "SEGUNDO CORTE · DESVIE!";
+        state.messageTimer = 0.55;
       }
     } else if (boss.dashState === "charging") {
       boss.x += boss.dashVX * dt;
@@ -913,8 +941,18 @@
         }
       }
       if (boss.dashTimer <= 0) {
-        boss.dashState = "recovery";
-        boss.dashTimer = 0.72;
+        if (boss.crossCombo && boss.crossStep === 0) {
+          boss.crossStep = 1;
+          boss.dashState = "cross-gap";
+          boss.dashTimer = TUNING.bossCrossGap;
+          state.message = "CORTE CRUZADO · SEGUNDO GOLPE!";
+          state.messageTimer = TUNING.bossCrossGap;
+        } else {
+          boss.crossCombo = false;
+          boss.crossStep = 0;
+          boss.dashState = "recovery";
+          boss.dashTimer = boss.crossStep === 1 ? TUNING.bossCrossRecovery : 0.72;
+        }
       }
     } else if (boss.dashState === "recovery") {
       boss.dashTimer -= dt;
@@ -931,7 +969,14 @@
         boss.dashTimer = TUNING.bossDashWarning;
         boss.dashX = dx / length;
         boss.dashY = dy / length;
-        state.message = "BOSS PREPARANDO DASH · DESVIE!";
+        boss.crossCombo = boss.hp <= boss.maxHP * 0.70 && boss.crossCooldown <= 0;
+        boss.crossStep = 0;
+        if (boss.crossCombo) {
+          boss.crossCooldown = TUNING.bossCrossCooldown;
+          state.message = "CORTE CRUZADO · PREPARE-SE!";
+        } else {
+          state.message = "BOSS PREPARANDO DASH · DESVIE!";
+        }
         state.messageTimer = TUNING.bossDashWarning;
       }
     }
@@ -1472,7 +1517,7 @@
 
     if (state.boss) {
       const boss = state.boss;
-      if (boss.dashState === "warning") {
+      if (boss.dashState === "warning" || boss.dashState === "cross-gap") {
         ctx.save();
         ctx.strokeStyle = "rgba(255,48,63,.9)";
         ctx.lineWidth = 5;
