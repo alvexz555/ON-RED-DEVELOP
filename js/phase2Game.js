@@ -96,7 +96,7 @@
     invuln: 0, x: 0, y: 0, vx: 0, vy: 0, knockbackTime: 0, dashEffectRolled: false, shieldHitsRemaining: 0, last: 0,
     saws: [], zones: [], merges: [], lasers: [], laserTimer: 3.2,
     sawSpawnTimer: 0, sawRestTimer: 0, zoneTimer: 1, mergeTimer: 3,
-    boss: null, pointer: null, pointerId: null,
+    boss: null, bossEntryTimer: 0, bossEntryShown: false, pointer: null, pointerId: null,
     revivesUsed: 0, bossDefeated: false, postBoss: false,
     gameOverShown: false, victoryShown: false,
     message: "", messageTimer: 0, best: 0
@@ -724,8 +724,8 @@
     };
     state.saws = [];
     state.lasers = [];
-    state.message = "SERRA GIGANTE · DASH COM 100% DE ENERGIA";
-    state.messageTimer = 4;
+    state.message = "BOSS APPROACHING";
+    state.messageTimer = 1.8;
   }
 
   function updateLasers(dt) {
@@ -1047,7 +1047,11 @@
   function update(dt) {
     if (!state.active || state.paused || state.over || state.victory) return;
     state.time += dt;
-    state.score += dt * 100;
+    if (state.bossEntryTimer > 0) {
+      state.bossEntryTimer = Math.max(0, state.bossEntryTimer - dt);
+    } else {
+      state.score += dt * 100;
+    }
     state.invuln = Math.max(0, state.invuln - dt);
     state.dashCooldown = Math.max(0, state.dashCooldown - dt);
     state.bossImpactTimer = Math.max(0, state.bossImpactTimer - dt);
@@ -1141,11 +1145,17 @@
     }
     state.merges = state.merges.filter(orb => orb.life > 0);
 
-    updatePingPongs(dt);
-    updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
-    updateLasers(dt);
-    if (!state.bossDefeated && !state.boss && state.time >= TUNING.bossTriggerSeconds) beginBoss();
-    if (state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+    if (state.bossEntryTimer <= 0) {
+      updatePingPongs(dt);
+      updateSaws(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
+      updateLasers(dt);
+    }
+    if (!state.bossDefeated && !state.boss && !state.bossEntryShown && state.time >= TUNING.bossTriggerSeconds) {
+      state.bossEntryShown = true;
+      state.bossEntryTimer = 1.8;
+      beginBoss();
+    }
+    if (state.bossEntryTimer <= 0 && state.effects.freeze <= 0) updateBoss(dt, previousPlayerX, previousPlayerY, dashActiveThisFrame);
   }
 
   function drawSawShape(x, y, radius, angle, teeth = 24, boss = false) {
