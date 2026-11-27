@@ -18,7 +18,7 @@ concurrency:
 jobs:
   deploy:
     environment:
-      name: phase2-preview
+      name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
@@ -33,11 +33,11 @@ jobs:
       - name: Upload development preview
         uses: actions/upload-pages-artifact@v3
         with:
-          name: phase2-preview
+          name: phase2-preview-${{ github.run_id }}-${{ github.run_attempt }}
           path: .
 
       - name: Deploy Phase 2 preview
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          artifact_name: phase2-preview
+          artifact_name: phase2-preview-${{ github.run_id }}-${{ github.run_attempt }}
