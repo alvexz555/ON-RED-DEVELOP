@@ -1746,14 +1746,16 @@
       ctx.fillText(state.message, w / 2, h * 0.17);
     }
 
-    if (state.paused || state.over || state.victory) {
+    // Game Over usa a tela HTML compartilhada da Fase 1.
+    // Não desenhar uma segunda tela no Canvas quando state.over for true.
+    if (state.paused || state.victory) {
       ctx.fillStyle = "rgba(0,0,0,.76)";
       ctx.fillRect(0, 0, w, h);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "900 28px Arial";
-      ctx.fillText(state.paused ? "PAUSADO" : state.victory ? "FASE 2 CONCLUÍDA" : "GAME OVER", w / 2, h / 2 - 28);
+      ctx.fillText(state.paused ? "PAUSADO" : "FASE 2 CONCLUÍDA", w / 2, h / 2 - 28);
       ctx.font = "bold 13px Arial";
       ctx.fillStyle = "#58BFFF";
       ctx.fillText("Toque para " + (state.paused ? "continuar" : "reiniciar"), w / 2, h / 2 + 8);
