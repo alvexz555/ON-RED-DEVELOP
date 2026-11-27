@@ -948,10 +948,11 @@
           state.message = "CORTE CRUZADO · SEGUNDO GOLPE!";
           state.messageTimer = TUNING.bossCrossGap;
         } else {
+          const completedCrossCut = boss.crossCombo && boss.crossStep === 1;
           boss.crossCombo = false;
           boss.crossStep = 0;
           boss.dashState = "recovery";
-          boss.dashTimer = boss.crossStep === 1 ? TUNING.bossCrossRecovery : 0.72;
+          boss.dashTimer = completedCrossCut ? TUNING.bossCrossRecovery : 0.72;
         }
       }
     } else if (boss.dashState === "recovery") {
